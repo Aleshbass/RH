@@ -739,6 +739,9 @@ export default defineSchema({
     suspendedBy: v.optional(v.id("users")),
     // Permanent Rehabify clinic ID, "RH-CL-100001". Assigned once, never changed or reused.
     clinicNumber: v.optional(v.string()),
+    // How many days back the clinic's clinicians may add a visit that already happened, to write
+    // its notes (Team page). Not set: a year. 0: only the clinic can (clinicTools.pastVisitDaysOf)
+    pastVisitDays: v.optional(v.number()),
   })
     .index("by_owner_id", ["ownerId"])
     .index("by_status", ["status"])
@@ -1680,6 +1683,9 @@ export default defineSchema({
     }))),
     // Written offline: the id the phone gave it, so a note sent twice is saved once
     clientId: v.optional(v.string()),
+    // A note for a visit on an earlier day (added afterwards): sessionDate is the visit's, this is
+    // when it was written, shown as "Written later" (physioCare.insertClinicalNote)
+    writtenAt: v.optional(v.number()),
   })
     .index("by_appointment_id", ["appointmentId"])
     .index("by_patient_id_and_date", ["patientId", "sessionDate"])

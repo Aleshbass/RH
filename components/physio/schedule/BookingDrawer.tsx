@@ -12,7 +12,7 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { ArrowRight, CalendarDays, Check, Clock, Home, Loader2, MapPin, MessageSquare, Search, User, UserPlus, Video } from '@/components/icons'
+import { ArrowRight, CalendarDays, Check, Clock, Home, Loader2, MapPin, MessageSquare, NotebookPen, Search, User, UserPlus, Video } from '@/components/icons'
 import type { Id } from '@/convex/_generated/dataModel'
 import { lagosDate, lagosShortDate, lagosTime, lagosTimeRange } from '@/convex/helpers/lagosTime'
 import { Button } from '@/components/ui/button'
@@ -49,6 +49,11 @@ export type BookingOptions = {
   suggestedDate?: string
   /** A line shown above the times, e.g. what the note said about the follow-up */
   hint?: string
+  /**
+   * Add a visit that already happened (never booked), so its note can be written: opens on
+   * "Other time or past visit" at this date (YYYY-MM-DD, Lagos).
+   */
+  pastDate?: string
 }
 
 type Step = 'patient' | 'new' | 'what' | 'when' | 'details' | 'done'
@@ -132,10 +137,19 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
   const [location, setLocation] = useState('')
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<{ payoutKobo?: number; holdExpiresAt?: number; past?: boolean; booked?: number; skipped?: number[] } | null>(null)
+  const [result, setResult] = useState<{
+    payoutKobo?: number
+    holdExpiresAt?: number
+    past?: boolean
+    booked?: number
+    skipped?: number[]
+    appointmentId?: string
+  } | null>(null)
   // Your own patients: any date and time, past ones too (a visit agreed by phone and never entered)
-  const [manualTime, setManualTime] = useState(false)
-  const [manualDate, setManualDate] = useState(() => (options.suggestedDate && options.suggestedDate >= lagosToday() ? options.suggestedDate : lagosToday()))
+  const [manualTime, setManualTime] = useState(Boolean(options.pastDate))
+  const [manualDate, setManualDate] = useState(
+    () => options.pastDate ?? (options.suggestedDate && options.suggestedDate >= lagosToday() ? options.suggestedDate : lagosToday())
+  )
   const [manualClock, setManualClock] = useState('09:00')
   // A paid visit that didn't happen, being rebooked free instead of booking a new paid session
   const [rebookOf, setRebookOf] = useState<RebookableVisit | null>(null)
@@ -158,6 +172,15 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
   const scheduleFollowUp = useMutationUntyped(scheduleApi.rehabifyFollowUps.scheduleRehabifyFollowUp)
 
   const offersOnline = coverage?.offersOnlineSessions ?? true
+
+  // How far back a visit that already happened can be added: a year, or what the patient's clinic
+  // allows its clinicians (Team page, appointments.getPastVisitRule)
+  const pastRule = useQueryUntyped(
+    scheduleApi.appointments.getPastVisitRule,
+    patient && !isRehabify && !servicesLoading ? { patientId: patient.id } : 'skip'
+  ) as { days: number; clinicName: string | null } | undefined
+  const pastDays = pastRule?.days ?? 365
+  const earliestDate = lagosToday(Date.now() - pastDays * 24 * 60 * 60 * 1000)
 
   const duration = rebookOf
     ? Math.max(15, Math.round((rebookOf.endTime - rebookOf.startTime) / 60_000))
@@ -190,6 +213,9 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
     available: !isRehabify && !rebookOf,
   })
   const slotIsPast = Boolean(slot && slot.end <= Date.now())
+  // Further back than the patient's clinic lets its clinicians go (the server says the same)
+  const pastNotAllowed =
+    slotIsPast && slot !== null && Boolean(pastRule?.clinicName) && (pastDays === 0 || slot.start < lagosDateTimeToMs(earliestDate, '00:00'))
 
   const setManualSlot = (date: string, clock: string) => {
     const start = lagosDateTimeToMs(date, clock)
@@ -208,8 +234,8 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
       setSlot(fixedSlot)
       goTo('details')
     } else {
-      // A typed time is resized to the session just chosen
-      if (manualTime) setManualSlot(manualDate, manualClock)
+      // A typed time is resized to the session just chosen (Rehabify patients pick from open times)
+      if (manualTime && !isRehabify) setManualSlot(manualDate, manualClock)
       goTo('when')
     }
   }
@@ -243,8 +269,8 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
           location: mode === 'in-person' ? location.trim() || undefined : undefined,
           notesForTherapist: notes.trim() || undefined,
           repeatStartTimes: repeat.bookStarts.length > 0 ? repeat.bookStarts : undefined,
-        })) as { past?: boolean; booked?: number; skipped?: number[] }
-        setResult({ past: res?.past, booked: res?.booked, skipped: res?.skipped })
+        })) as { past?: boolean; booked?: number; skipped?: number[]; appointmentId?: string }
+        setResult({ past: res?.past, booked: res?.booked, skipped: res?.skipped, appointmentId: res?.appointmentId })
       }
       playSound('booked')
       goTo('done')
@@ -535,6 +561,39 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
             {options.suggestedDate && <> Around {lagosDate(Date.parse(`${options.suggestedDate}T12:00:00+01:00`))}.</>}
           </p>
         )}
+        {!rebookOf && !isRehabify && (
+          <div className="mb-4 grid grid-cols-2 gap-1 rounded-2xl bg-pt-sunken p-1" role="tablist" aria-label="How to choose the time">
+            {[
+              { manual: false, label: 'My open times' },
+              { manual: true, label: 'Other time or past visit' },
+            ].map((choice) => (
+              <button
+                key={choice.label}
+                type="button"
+                role="tab"
+                aria-selected={manualTime === choice.manual}
+                onClick={() => {
+                  if (manualTime === choice.manual) return
+                  setManualTime(choice.manual)
+                  if (choice.manual) setManualSlot(manualDate, manualClock)
+                  else setSlot(null)
+                }}
+                className={cn(
+                  'h-10 rounded-xl px-2 text-sm font-medium transition',
+                  manualTime === choice.manual ? 'bg-pt-surface text-pt-ink shadow-sm' : 'text-pt-muted hover:text-pt-ink'
+                )}
+              >
+                {choice.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {options.pastDate && isRehabify && (
+          <p className="mb-4 rounded-2xl bg-pt-amber-bg p-3 text-sm text-pt-amber-fg">
+            {firstName} is a Rehabify patient, so each session is booked and paid for first. A visit that already happened can’t be added
+            here. Write the note on today’s visit, or ask Rehabify’s care team.
+          </p>
+        )}
         {manualTime && !rebookOf && !isRehabify ? (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
@@ -545,6 +604,7 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
                 <Input
                   id="booking-date"
                   type="date"
+                  min={pastDays > 0 ? earliestDate : lagosToday()}
                   value={manualDate}
                   onChange={(e) => {
                     setManualDate(e.target.value)
@@ -570,10 +630,19 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
                 />
               </div>
             </div>
-            {slotIsPast && (
-              <p className="rounded-2xl bg-pt-green-bg p-3 text-sm text-pt-green-fg">
-                This time has passed, so it’s saved as a visit {firstName} attended. No reminder or confirmation is sent.
+            {pastNotAllowed ? (
+              <p className="rounded-2xl bg-pt-amber-bg p-3 text-sm text-pt-amber-fg">
+                {pastDays === 0
+                  ? `${pastRule?.clinicName ?? 'Your clinic'} doesn’t let clinicians add visits that already happened. Ask the clinic owner to add it.`
+                  : `${pastRule?.clinicName ?? 'Your clinic'} lets clinicians add visits up to ${pastDays} days back. Ask the clinic owner to add older ones.`}
               </p>
+            ) : (
+              slotIsPast && (
+                <p className="rounded-2xl bg-pt-green-bg p-3 text-sm text-pt-green-fg">
+                  This time has passed, so it’s saved as a visit {firstName} attended. Nothing is sent to them, and you can write the note
+                  straight after.
+                </p>
+              )
             )}
           </div>
         ) : (
@@ -585,20 +654,6 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
             Open times use your working hours, days off and existing bookings, in Lagos time. To book outside them, or to add a visit that already happened, enter the date and time yourself.
           </InfoTip>
         </p>
-        {!rebookOf && !isRehabify && (
-          <button
-            type="button"
-            onClick={() => {
-              const next = !manualTime
-              setManualTime(next)
-              if (next) setManualSlot(manualDate, manualClock)
-              else setSlot(null)
-            }}
-            className="mt-2 text-sm font-semibold text-pt-ink underline-offset-2 hover:underline"
-          >
-            {manualTime ? 'Pick from my open times instead' : 'Enter a date and time yourself (past visits too)'}
-          </button>
-        )}
       </div>
     )
     footer = (
@@ -628,7 +683,7 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
               {slot ? `Rebook for ${lagosShortDate(slot.start)}, ${lagosTime(slot.start)}` : 'Pick the new time'}
             </Button>
           ) : (
-            <Button className={cn(primaryButtonClass, 'h-11 flex-[2]')} disabled={!slot} onClick={() => goTo('details')}>
+            <Button className={cn(primaryButtonClass, 'h-11 flex-[2]')} disabled={!slot || pastNotAllowed} onClick={() => goTo('details')}>
               {slot ? 'Continue' : 'Pick a time to continue'}
             </Button>
           )}
@@ -751,7 +806,7 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
             : isRehabify && result?.holdExpiresAt
             ? `They pay to confirm${result.payoutKobo !== undefined ? `, and you earn ${formatKobo(result.payoutKobo)}` : ''}. We hold the time until ${lagosShortDate(result.holdExpiresAt)}, ${lagosTime(result.holdExpiresAt)}.`
             : result?.past && (result.booked ?? 1) === 1
-              ? 'It’s on your Schedule as attended. Nothing was sent to the patient.'
+              ? 'It’s on your Schedule as attended. Nothing was sent to the patient. Write the note now, while it’s fresh.'
               : `${firstName} gets a notification to confirm. You’ll see ${(result?.booked ?? 1) > 1 ? 'them' : 'it'} on your Schedule.`}
         </p>
         {(result?.skipped?.length ?? 0) > 0 && (
@@ -764,7 +819,20 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
         </div>
       </div>
     )
-    footer = (
+    const writeNoteFor = result?.past && result.appointmentId ? result.appointmentId : null
+    footer = writeNoteFor ? (
+      <div className="grid grid-cols-2 gap-2">
+        <Button className={cn(secondaryButtonClass, 'h-11')} onClick={close}>
+          Done
+        </Button>
+        <Button asChild className={cn(primaryButtonClass, 'h-11')}>
+          <Link href={`/dashboard/physiotherapist/patients/${patient.id}?note=new&appointment=${writeNoteFor}`} onClick={close}>
+            <NotebookPen className="mr-2 h-4 w-4" />
+            Write the note
+          </Link>
+        </Button>
+      </div>
+    ) : (
       <div className="grid grid-cols-2 gap-2">
         <Button asChild className={cn(secondaryButtonClass, 'h-11')}>
           <Link href={`/dashboard/physiotherapist/messages?with=${patient.id}`} onClick={close}>

@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import EnhancedClinicStaffInviteModal from '@/components/dashboard/clinic/EnhancedClinicStaffInviteModal'
 import StaffTable, { type TeamMember } from '@/components/clinic/staff/StaffTable'
 import RolesPanel from '@/components/clinic/staff/RolesPanel'
+import PastVisitsPanel from '@/components/clinic/staff/PastVisitsPanel'
 import {
   roleLabel,
   teamError,
@@ -202,6 +203,9 @@ export default function StaffManagementPage() {
           )}
 
           <RolesPanel roles={roles} />
+
+          {/* How far back clinicians may add a visit they forgot to book */}
+          <PastVisitsPanel />
         </>
       )}
 

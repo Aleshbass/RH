@@ -75,6 +75,11 @@ function filledText(text: string | undefined | null): string {
     .trim()
 }
 
+/** Written on a later day than the visit it documents (a visit added afterwards). */
+function writtenLater(note: { writtenAt?: number | null }) {
+  return typeof note.writtenAt === 'number'
+}
+
 /** One line that says what the note is about: the assessment, else the first filled line. */
 function noteSummary(note: NoteRow): string {
   const assessment = filledText(note.diagnosis).split('\n')[0]
@@ -257,10 +262,12 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
                             </StatusBadge>
                           </span>
                         )}
-                        {(!note.mine || note.editedAt || note.aiAssisted) && (
+                        {(!note.mine || note.editedAt || note.aiAssisted || writtenLater(note)) && (
                           <span className="block text-xs text-pt-muted">
                             {[
                               note.mine ? null : `By ${note.authorName}`,
+                              // A visit documented afterwards: dated to the visit, written later
+                              writtenLater(note) ? `Written later, ${format(note.writtenAt!, 'd MMM yyyy')}` : null,
                               note.aiAssisted ? 'Drafted with Rehabify Scribe, signed by the physio' : null,
                               note.editedAt ? `Edited ${format(note.editedAt, 'd MMM yyyy, HH:mm')}` : null,
                             ]

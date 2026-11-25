@@ -11,7 +11,9 @@ import type { Workspace } from './shared'
  * The patient at first glance, in the header of the physio workspace and the clinic's record:
  * age, gender, date of birth and town under the name, and their past medical history. Clinics
  * asked for these back (Nov 2026): the date of birth was collected but age and gender weren't
- * shown anywhere you'd look first. Anything not recorded is simply left out.
+ * shown anywhere you'd look first. Anything not recorded is left out, with an "Add" where the
+ * viewer may edit the patient's details. Older patients' details are gathered from wherever they
+ * were recorded (convex/helpers/patientGlance.ts), so they read the same as new ones.
  */
 
 const GENDER_LABELS: Record<string, string> = { male: 'Male', female: 'Female', other: 'Other' }
@@ -32,17 +34,40 @@ function ageLabel(years: number | null | undefined) {
   return years === 1 ? '1 yr' : `${years} yrs`
 }
 
-/** "34 yrs · Female · Born 3 Jan 1991 · Lagos" under the patient's name. */
-export function PatientFacts({ profile, className }: { profile: Workspace['profile']; className?: string }) {
+/**
+ * "34 yrs · Female · Born 3 Jan 1991 · Lagos" under the patient's name. `onAdd` (where the viewer
+ * may edit the patient's details) offers to add an age or gender that isn't recorded.
+ */
+export function PatientFacts({ profile, onAdd, className }: { profile: Workspace['profile']; onAdd?: () => void; className?: string }) {
   const born = bornOn(profile?.dateOfBirth)
-  const facts = [
-    ageLabel(profile?.ageYears),
-    profile?.gender ? (GENDER_LABELS[profile.gender.toLowerCase()] ?? null) : null,
-    born ? `Born ${born}` : null,
-    profile?.city?.trim() || null,
-  ].filter((fact): fact is string => Boolean(fact))
-  if (facts.length === 0) return null
-  return <p className={cn('text-sm font-medium text-pt-ink', className)}>{facts.join(' · ')}</p>
+  const age = ageLabel(profile?.ageYears)
+  const gender = profile?.gender ? (GENDER_LABELS[profile.gender.toLowerCase()] ?? null) : null
+  const facts = [age, gender, born ? `Born ${born}` : null, profile?.city?.trim() || null].filter((fact): fact is string => Boolean(fact))
+  const missing = [!age && !born ? 'age' : null, !gender ? 'gender' : null].filter(Boolean)
+  if (facts.length === 0 && !onAdd) return null
+  return (
+    <p className={cn('text-sm font-medium text-pt-ink', className)}>
+      {facts.join(' · ')}
+      {onAdd && missing.length > 0 && (
+        <span className="font-normal text-pt-muted">
+          {facts.length > 0 ? ' · ' : ''}
+          {missing.length === 2 ? 'No age or gender recorded' : `No ${missing[0]} recorded`}
+          {' · '}
+          <button type="button" onClick={onAdd} className="font-semibold text-pt-ink underline-offset-2 hover:underline">
+            Add
+          </button>
+        </span>
+      )}
+    </p>
+  )
+}
+
+/** "From the initial assessment, 3 Oct 2026": where a history not in their details was found. */
+function historySourceLabel(from: NonNullable<Workspace['profile']>['medicalHistoryFrom']) {
+  if (!from) return null
+  if (from.kind === 'joy') return `From what they told Joy, ${format(from.date, 'd MMM yyyy')}`
+  const note = from.noteType === 'initial_assessment' ? 'the initial assessment' : 'a clinical note'
+  return `From ${note}, ${format(from.date, 'd MMM yyyy')}`
 }
 
 /**
@@ -51,14 +76,18 @@ export function PatientFacts({ profile, className }: { profile: Workspace['profi
  */
 export function MedicalHistoryLine({
   history,
+  from,
   onAdd,
   className,
 }: {
   history: string | null | undefined
+  /** Where it was found, when it isn't the patient's details (an assessment note, Joy's intake) */
+  from?: NonNullable<Workspace['profile']>['medicalHistoryFrom']
   onAdd?: () => void
   className?: string
 }) {
   const text = history?.trim() || null
+  const source = text ? historySourceLabel(from) : null
   const [open, setOpen] = useState(false)
   const [clamped, setClamped] = useState(false)
   const textRef = useRef<HTMLParagraphElement>(null)
@@ -94,6 +123,19 @@ export function MedicalHistoryLine({
               >
                 {open ? 'Less' : 'More'}
               </button>
+            )}
+            {source && (
+              <p className="mt-0.5 text-xs text-pt-muted">
+                {source}
+                {onAdd && (
+                  <>
+                    {' · '}
+                    <button type="button" onClick={onAdd} className="font-semibold text-pt-ink underline-offset-2 hover:underline">
+                      Save to their details
+                    </button>
+                  </>
+                )}
+              </p>
             )}
           </>
         ) : (

@@ -44,6 +44,7 @@ import { suggestedDate } from '@/components/physio/notes/scribe/scribeTools';
 import { ShareLinkDialog } from '@/components/exercise-programs/ShareLinkDialog';
 import { PatientPlanBadge } from '@/components/exercise-programs/PatientPlanBadge';
 import { useBooking } from '@/components/physio/schedule/BookingDrawer';
+import { lagosToday } from '@/lib/repeatVisits';
 import { useConnectToJoy } from '@/components/joy/useConnectToJoy';
 import { JoinVideoButton } from '@/components/physio/schedule/JoinVideoButton';
 import { needsMyAnswer, useNow, useTodaysVisits, videoJoin } from '@/components/physio/schedule/shared';
@@ -195,6 +196,8 @@ export default function PatientWorkspacePage() {
   const name = fullName(patient);
   const initials = `${patient.firstName?.[0] ?? ''}${patient.lastName?.[0] ?? ''}`.toUpperCase() || 'P';
   const isActive = episode.status === 'active';
+  // The clinic's other clinicians on this patient's care team
+  const sharedWith = (workspace.careTeam ?? []).filter((m) => !m.you);
   const needsReview =
     workspace.checkIns.some((c) => c.flagged && !c.reviewedAt) ||
     (workspace.exerciseLogs ?? []).some((l) => l.painScore !== null && l.painScore >= 7 && !l.reviewedAt);
@@ -233,7 +236,7 @@ export default function PatientWorkspacePage() {
             <div className="min-w-0">
               <h1 className="truncate text-2xl font-semibold tracking-tight text-pt-ink sm:text-[28px]">{name}</h1>
               {/* Age, gender, date of birth and town, at first glance */}
-              <PatientFacts profile={workspace.profile} />
+              <PatientFacts profile={workspace.profile} onAdd={isActive ? () => setDrawer('edit') : undefined} />
               <p className="truncate text-sm text-pt-muted">{[patient.email, patient.phoneNumber].filter(Boolean).join(' · ') || 'No contact details'}</p>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <RehabifyId value={patient.patientNumber} className="rounded-full px-2.5 text-xs" />
@@ -246,6 +249,12 @@ export default function PatientWorkspacePage() {
                   {episode.source === 'referred' && episode.referredBy ? ` by ${episode.referredBy}` : ''}
                 </StatusBadge>
                 <StatusBadge>Since {format(workspace.relationship.startDate, 'MMM yyyy')}</StatusBadge>
+                {/* A clinic patient looked after by more than one clinician */}
+                {sharedWith.length > 0 && (
+                  <StatusBadge>
+                    Shared with {sharedWith.map((m) => `${m.name.split(' ')[0]}${m.lead ? ' (lead)' : ''}`).join(', ')}
+                  </StatusBadge>
+                )}
                 {/* Flex / Flex Max, for an independent physio's own patients only */}
                 <PatientPlanBadge patientId={patientId} />
               </div>
@@ -287,6 +296,10 @@ export default function PatientWorkspacePage() {
                 {isActive && (
                   <>
                     <DropdownMenuItem onClick={() => openBooking({ patient: { id: patientId, name }, mode: 'telehealth' })}>Book a video session</DropdownMenuItem>
+                    {/* A visit that happened but was never booked, so its note can be written */}
+                    <DropdownMenuItem onClick={() => openBooking({ patient: { id: patientId, name }, pastDate: lagosToday() })}>
+                      Add a past visit
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => go('files')}>Upload a file</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setDrawer('episode')}>Care details and source</DropdownMenuItem>
                     <DropdownMenuItem disabled={joyConnect.busy} onClick={() => void joyConnect.connect(patientId, patient.firstName ?? undefined)}>
@@ -315,6 +328,7 @@ export default function PatientWorkspacePage() {
         {/* Past medical history, so it's never more than a glance away (editing needs active care) */}
         <MedicalHistoryLine
           history={workspace.profile?.medicalHistory}
+          from={workspace.profile?.medicalHistoryFrom}
           onAdd={isActive ? () => setDrawer('edit') : undefined}
           className="mt-4 border-t border-pt-line pt-4"
         />

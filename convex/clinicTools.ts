@@ -33,6 +33,7 @@ import { insertNotification } from "./helpers/pushNotify";
 import { queueJoyAppointmentScheduled } from "./helpers/joyEvents";
 import { publicAppUrl } from "./helpers/appUrl";
 import { normalizePhone } from "./helpers/partnerShared";
+import { PAST_VISIT_CHOICES, careTeamLinks, leadLink, pastVisitDaysOf } from "./helpers/careTeam";
 
 /** Section names as the clinic's note form shows them, for "too long" messages. */
 const CLINIC_NOTE_LABELS: Record<string, string> = {
@@ -842,8 +843,9 @@ export const getClinicPatientFullRecord = query({
       .withIndex("by_user_id", (q: any) => q.eq("userId", args.patientId))
       .first();
 
-    // This clinic's active care relationship (not one at another provider, or a private one)
-    const relationship = patientRels.find((rel) => rel.status === "active" && rel.clinicId === clinic._id);
+    // This clinic's active care relationship (not one at another provider, or a private one): the
+    // lead clinician's when several look after the patient (the care team: getPatientWorkspace)
+    const relationship = leadLink(patientRels.filter((rel) => rel.status === "active" && rel.clinicId === clinic._id)) ?? undefined;
     const careStatus = await getCareStatus(ctx, clinic, args.patientId);
 
     let primaryClinician = null;
@@ -4117,5 +4119,201 @@ export const resolveClinicBookingRequest = mutation({
       },
     });
     return { changed: true };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Care teams and past visits (clinic feedback, 24 Nov 2026)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The clinic's rule for past visits, for the Team page. */
+export const getPastVisitRule = query({
+  args: {},
+  handler: async (ctx) => {
+    const member = await getClinicMemberOrNull(ctx);
+    if (!member) return null;
+    return { days: pastVisitDaysOf(member.clinic), canChange: isClinicAdmin(member) };
+  },
+});
+
+/** The owner (or someone with full access) chooses how far back clinicians may add visits. */
+export const setPastVisitRule = mutation({
+  args: { days: v.number() },
+  handler: async (ctx, args) => {
+    const member = await requireClinicWrite(ctx);
+    if (!isClinicAdmin(member)) throw new ConvexError("Only the clinic owner can change this.");
+    if (!(PAST_VISIT_CHOICES as readonly number[]).includes(args.days)) throw new ConvexError("Choose one of the options.");
+    await ctx.db.patch(member.clinic._id, { pastVisitDays: args.days });
+    await logSecurityEvent(ctx, "permission_updated", {
+      userId: member.user._id,
+      clinicId: member.clinic._id,
+      details: { change: "past_visit_days", days: args.days },
+    });
+    return { days: args.days };
+  },
+});
+
+/** Changing who looks after a patient: the owner, or someone the owner gave full access. */
+async function requireCareTeamManager(ctx: MutationCtx) {
+  const member = await requireClinicWrite(ctx, "patients");
+  if (!isClinicAdmin(member)) {
+    throw new ConvexError("Only the clinic owner (or someone with full access) can change who looks after a patient.");
+  }
+  return member;
+}
+
+function nameOrNull(user: Doc<"users"> | null) {
+  return [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() || null;
+}
+
+/**
+ * Adds a clinician to a patient's care team, alongside the clinician(s) already looking after
+ * them. They see the same clinic record, book their own visits and write their own notes.
+ */
+export const addToCareTeam = mutation({
+  args: { patientId: v.id("users"), clinicianId: v.id("users") },
+  handler: async (ctx, args) => {
+    const { clinic, user } = await requireCareTeamManager(ctx);
+    await assertPatientInClinic(ctx, clinic, args.patientId);
+    const clinicianId = await requireAssignedClinician(ctx, clinic, args.clinicianId);
+
+    const links = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
+      .collect();
+    const team = await careTeamLinks(ctx, args.patientId, clinic);
+    if (team.length === 0) {
+      const inCare = links.some((r) => r.clinicId === clinic._id && r.status === "active");
+      throw new ConvexError(
+        inCare
+          ? "Assign this patient's clinician first, then add others to the care team."
+          : "This patient's care has ended. Start their care again before adding clinicians."
+      );
+    }
+    if (team.some((r) => r.physiotherapistId === clinicianId)) {
+      throw new ConvexError("They're already on this patient's care team.");
+    }
+    // Their own private care of this patient (outside the clinic) would be mixed up with the clinic's
+    if (links.some((r) => r.physiotherapistId === clinicianId && r.status === "active" && r.clinicId !== clinic._id)) {
+      throw new ConvexError("This clinician already treats this patient in their own practice, outside the clinic.");
+    }
+
+    const lead = team[0];
+    const now = Date.now();
+    // Re-open an earlier link with this clinician instead of adding a second row for the same pair
+    const earlier = links.find((r) => r.physiotherapistId === clinicianId && r.clinicId === clinic._id);
+    if (earlier) {
+      await ctx.db.patch(earlier._id, { status: "active", isPrimaryPhysiotherapist: false, startDate: now, endDate: undefined, notes: undefined });
+    } else {
+      await ctx.db.insert("patientPhysiotherapistRelationships", {
+        patientId: args.patientId,
+        physiotherapistId: clinicianId,
+        clinicId: clinic._id,
+        status: "active",
+        isPrimaryPhysiotherapist: false,
+        startDate: now,
+        // Where the patient came from stays the same for the whole team (e.g. a Rehabify referral)
+        source: lead.source,
+      });
+    }
+
+    const patientName = nameOrNull(await ctx.db.get(args.patientId)) ?? "A patient";
+    const leadName = nameOrNull(await ctx.db.get(lead.physiotherapistId)) ?? "their clinician";
+    await insertNotification(ctx, {
+      userId: clinicianId,
+      type: "patient_assigned",
+      priority: "medium",
+      status: "pending",
+      createdAt: now,
+      payload: {
+        title: `You're on ${patientName}'s care team`,
+        body: `${clinic.name} added you to ${patientName}'s care, with ${leadName}. Notes, plan and programmes are in one shared record.`,
+        data: { entityId: String(args.patientId), entityType: "patient" },
+        link: `/dashboard/physiotherapist/patients/${args.patientId}`,
+      },
+    });
+    await logSecurityEvent(ctx, "permission_updated", {
+      userId: user._id,
+      clinicId: clinic._id,
+      details: { change: "care_team_added", patientId: args.patientId, clinicianId },
+    });
+    return { success: true };
+  },
+});
+
+/** Takes a clinician off a patient's care team. The lead can't be taken off: make someone else lead first. */
+export const removeFromCareTeam = mutation({
+  args: { patientId: v.id("users"), clinicianId: v.id("users") },
+  handler: async (ctx, args) => {
+    const { clinic, user } = await requireCareTeamManager(ctx);
+    await assertPatientInClinic(ctx, clinic, args.patientId);
+    const team = await careTeamLinks(ctx, args.patientId, clinic);
+    const target = team.find((r) => r.physiotherapistId === args.clinicianId);
+    if (!target) throw new ConvexError("They're not on this patient's care team.");
+    if (team.length === 1) {
+      throw new ConvexError("They're the only clinician looking after this patient. Use Change clinician to hand over instead.");
+    }
+    if (team[0]._id === target._id) throw new ConvexError("They lead this patient's care. Make someone else the lead first.");
+
+    const now = Date.now();
+    // Every active clinic link of theirs with this patient (old data can hold two)
+    const theirs = (
+      await ctx.db
+        .query("patientPhysiotherapistRelationships")
+        .withIndex("by_patient_and_physiotherapist", (q) => q.eq("patientId", args.patientId).eq("physiotherapistId", args.clinicianId))
+        .collect()
+    ).filter((r) => r.clinicId === clinic._id && r.status === "active");
+    for (const link of theirs) await ctx.db.patch(link._id, { status: "inactive", endDate: now });
+
+    // Visits they still have booked with the patient stay on the diary: the clinic decides
+    const upcomingVisits = (
+      await ctx.db
+        .query("appointments")
+        .withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", args.clinicianId).gt("startTime", now))
+        .collect()
+    ).filter((a) => a.patientId === args.patientId && (a.status === "scheduled" || a.status === "confirmed")).length;
+
+    const patientName = nameOrNull(await ctx.db.get(args.patientId)) ?? "a patient";
+    await insertNotification(ctx, {
+      userId: args.clinicianId,
+      type: "patient_assigned",
+      priority: "low",
+      status: "pending",
+      createdAt: now,
+      payload: {
+        title: `You're no longer on ${patientName}'s care team`,
+        body: `${clinic.name} took you off ${patientName}'s care. The notes you wrote stay on their record.`,
+        data: { entityId: String(args.patientId), entityType: "patient" },
+        link: "/dashboard/physiotherapist/patients",
+      },
+    });
+    await logSecurityEvent(ctx, "permission_updated", {
+      userId: user._id,
+      clinicId: clinic._id,
+      details: { change: "care_team_removed", patientId: args.patientId, clinicianId: args.clinicianId },
+    });
+    return { success: true, upcomingVisits };
+  },
+});
+
+/** Makes another clinician on the care team the lead. Nobody leaves the team. */
+export const setCareTeamLead = mutation({
+  args: { patientId: v.id("users"), clinicianId: v.id("users") },
+  handler: async (ctx, args) => {
+    const { clinic } = await requireCareTeamManager(ctx);
+    await assertPatientInClinic(ctx, clinic, args.patientId);
+    const team = await careTeamLinks(ctx, args.patientId, clinic);
+    if (!team.some((r) => r.physiotherapistId === args.clinicianId)) throw new ConvexError("They're not on this patient's care team.");
+    const links = (
+      await ctx.db
+        .query("patientPhysiotherapistRelationships")
+        .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
+        .collect()
+    ).filter((r) => r.clinicId === clinic._id && r.status === "active");
+    for (const link of links) {
+      const lead = link.physiotherapistId === args.clinicianId;
+      if (link.isPrimaryPhysiotherapist !== lead) await ctx.db.patch(link._id, { isPrimaryPhysiotherapist: lead });
+    }
+    return { success: true };
   },
 });

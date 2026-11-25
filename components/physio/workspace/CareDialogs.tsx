@@ -256,6 +256,18 @@ export function CompleteCareDialog({
       }
     >
       <div className="space-y-5">
+        {/* A clinic patient shared with colleagues: the course of care ends for the whole team */}
+        {(workspace.careTeam ?? []).filter((m) => !m.you).length > 0 && (
+          <p className="rounded-2xl bg-pt-amber-bg p-3 text-sm text-pt-amber-fg">
+            {name}’s care is shared with{' '}
+            {(workspace.careTeam ?? [])
+              .filter((m) => !m.you)
+              .map((m) => m.name)
+              .join(', ')}
+            . Completing it ends care for the whole team, and they’re told. To step back yourself, ask the clinic to take you off the care
+            team instead.
+          </p>
+        )}
         <div>
           <Label>How did it go?</Label>
           <div className="mt-1.5">
@@ -288,7 +300,8 @@ export function CompleteCareDialog({
           <Checkbox checked={cancelUpcoming} onCheckedChange={(checked) => setCancelUpcoming(Boolean(checked))} className="mt-0.5" />
           <span className="text-sm text-pt-ink">
             Cancel any upcoming bookings with {name}
-            {workspace.nextAppointment ? '' : <span className="text-pt-muted"> (none booked)</span>}
+            {(workspace.careTeam ?? []).length > 1 ? ', the care team’s too' : ''}
+            {workspace.nextAppointment ? '' : <span className="text-pt-muted"> (none booked with you)</span>}
           </span>
         </label>
         <div>

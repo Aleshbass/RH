@@ -9,6 +9,7 @@ import { ensureClinicNumber, ensureUserNumbers } from "./helpers/rehabifyIds";
 import { CLINIC_INVITE_APPROVAL_NOTE } from "./helpers/clinicApproval";
 import { personName } from "./helpers/displayIdentity";
 import { patientJoinStatus, shownEmail } from "./helpers/patientJoinStatus";
+import { leadLink } from "./helpers/careTeam";
 import { assertClinicianSeatFree, assertClinicNotBillingReadOnly } from "./helpers/clinicSubscriptions";
 
 /**
@@ -2202,13 +2203,22 @@ export const getClinicPatients = query({
         .collect(),
     ];
 
-    // One row per patient: the active relationship when there is one, else the latest
+    // One row per patient: the active relationship when there is one (the lead clinician's when
+    // several look after them), else the latest
     const uniquePatientMap = new Map<Id<"users">, Doc<"patientPhysiotherapistRelationships">>();
+    // Everyone looking after each patient now (the owner's account doesn't treat)
+    const carers = new Map<Id<"users">, Doc<"patientPhysiotherapistRelationships">[]>();
     patientRelationships.flat().forEach(rel => {
+      if (rel.status === "active" && rel.physiotherapistId !== clinic.ownerId) {
+        const list = carers.get(rel.patientId) ?? [];
+        if (!list.some((r) => r.physiotherapistId === rel.physiotherapistId)) list.push(rel);
+        carers.set(rel.patientId, list);
+      }
       const current = uniquePatientMap.get(rel.patientId);
       const better =
         !current ||
         (rel.status === "active" && current.status !== "active") ||
+        (rel.status === "active" && current.status === "active" && leadLink([rel, current]) === rel) ||
         (rel.status !== "active" && current.status !== "active" && (rel.endDate ?? 0) > (current.endDate ?? 0));
       if (better) {
         uniquePatientMap.set(rel.patientId, rel);
@@ -2221,7 +2231,8 @@ export const getClinicPatients = query({
 
     // Patients in care first, then by most recent start
     const uniqueRelationships = Array.from(uniquePatientMap.values())
-      .filter((rel) => !onlyOwnPatients || rel.physiotherapistId === member!.user._id)
+      // On the care team counts, not only the lead
+      .filter((rel) => !onlyOwnPatients || rel.physiotherapistId === member!.user._id || (carers.get(rel.patientId) ?? []).some((r) => r.physiotherapistId === member!.user._id))
       .sort((a, b) =>
         a.status === "active" && b.status !== "active"
           ? -1
@@ -2269,6 +2280,15 @@ export const getClinicPatients = query({
             startDate: rel.startDate,
             status: rel.status,
           },
+          // The other clinicians on their care team, beside the lead above
+          otherClinicians: await Promise.all(
+            (carers.get(rel.patientId) ?? [])
+              .filter((r) => r.physiotherapistId !== rel.physiotherapistId)
+              .map(async (r) => {
+                const u = (await ctx.db.get(r.physiotherapistId)) as Doc<"users"> | null;
+                return { _id: r.physiotherapistId, firstName: u?.firstName || "", lastName: u?.lastName || "" };
+              })
+          ),
           source: rel.source ?? "clinic_direct",
           // Left with the owner (e.g. their clinician left): the owner doesn't treat, so assign someone
           needsClinician: rel.status === "active" && rel.physiotherapistId === clinic.ownerId,

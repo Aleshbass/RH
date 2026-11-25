@@ -29,7 +29,7 @@ import {
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
-import { formatLagos, lagosDate, lagosTime, startOfZonedDay } from '@/convex/helpers/lagosTime'
+import { formatLagos, lagosDate, lagosTime, startOfZonedDay, zonedDateKey } from '@/convex/helpers/lagosTime'
 import { isCancelledAppointment } from '@/convex/helpers/appointmentStatus'
 import { Button } from '@/components/ui/button'
 import { isVideoVisit } from '@/components/appointments/appointment-ui'
@@ -545,6 +545,7 @@ export function DayAgenda({
   now,
   onOpen,
   onBook,
+  onAddPast,
 }: {
   day: number
   entries: Entry[]
@@ -552,6 +553,8 @@ export function DayAgenda({
   now: number
   onOpen: (entry: Entry) => void
   onBook: (start?: number) => void
+  /** Add a visit on this day that happened but was never booked, so its note can be written */
+  onAddPast?: (day: number) => void
 }) {
   const practice = usePracticeMode()
   const today = startOfZonedDay(now)
@@ -596,6 +599,17 @@ export function DayAgenda({
         )}
         {freeMs > 0 && <span className="rounded-full bg-pt-green-bg px-2.5 py-1 text-xs font-medium text-pt-green-fg">{durationLabel(freeMs)} free</span>}
         {dayOff && <span className="rounded-full bg-pt-sunken px-2.5 py-1 text-xs font-medium text-pt-muted">Day off</span>}
+        {/* Today or an earlier day: a visit that happened but was never booked */}
+        {onAddPast && day <= today && (
+          <button
+            type="button"
+            onClick={() => onAddPast(day)}
+            className="inline-flex items-center gap-1 rounded-full border border-pt-line-strong px-2.5 py-1 text-xs font-semibold text-pt-ink transition hover:bg-pt-hover"
+          >
+            <Plus className="h-3 w-3" aria-hidden />
+            Add a past visit
+          </button>
+        )}
       </div>
 
       {rows.filter((row) => row.kind !== 'now').length === 0 ? (
@@ -606,7 +620,7 @@ export function DayAgenda({
             {dayOff
               ? 'You aren’t taking bookings this day. Change that in your working hours.'
               : past
-                ? 'No sessions were booked.'
+                ? 'No sessions were booked. Saw someone and didn’t book it? Add the visit, then write its note.'
                 : practice.isIndependent
                   ? 'Book one of your patients in.'
                   : 'Book a patient in, or share your booking page from Today.'}
@@ -615,13 +629,18 @@ export function DayAgenda({
             <Button asChild size="sm" className={cn(secondaryButtonClass, 'mt-4 h-9')}>
               <Link href={WORKING_HOURS_HREF}>Working hours</Link>
             </Button>
-          ) : (
-            !past && (
-              <Button size="sm" className={cn(primaryButtonClass, 'mt-4 h-9')} onClick={() => onBook()}>
+          ) : past ? (
+            onAddPast && (
+              <Button size="sm" className={cn(secondaryButtonClass, 'mt-4 h-9')} onClick={() => onAddPast(day)}>
                 <Plus className="mr-1.5 h-3.5 w-3.5" />
-                New appointment
+                Add a past visit
               </Button>
             )
+          ) : (
+            <Button size="sm" className={cn(primaryButtonClass, 'mt-4 h-9')} onClick={() => onBook()}>
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              New appointment
+            </Button>
           )}
         </div>
       ) : (
@@ -864,6 +883,8 @@ export function CalendarView({ header }: { header: ReactNode }) {
     setDrawerOpen(true)
   }, [])
   const book = useCallback((start?: number) => openBooking(start ? { slot: { start } } : undefined), [openBooking])
+  // A visit that happened but was never booked: the date is typed in Lagos time, as in the drawer
+  const addPast = useCallback((day: number) => openBooking({ pastDate: zonedDateKey(day + 12 * 60 * 60 * 1000, 'Africa/Lagos') }), [openBooking])
   const selected = useMemo(() => appointments.find((apt) => apt._id === selectedId) ?? null, [appointments, selectedId])
   const thisWeek = weekStart === weekStartOf(now)
 
@@ -962,6 +983,7 @@ export function CalendarView({ header }: { header: ReactNode }) {
             now={now}
             onOpen={open}
             onBook={book}
+            onAddPast={addPast}
           />
         </section>
       </div>

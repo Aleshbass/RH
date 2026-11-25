@@ -104,6 +104,13 @@ interface PatientRow {
   join: PatientJoinState | null
 }
 
+/** "Ada Obi", "Ada Obi & Tunde Bello", "Ada Obi + 2 more": the lead first, then the rest of the care team. */
+function careTeamLabel(lead: string, others: string[]) {
+  if (!lead) return others.join(', ')
+  if (others.length === 0) return lead
+  return others.length === 1 ? `${lead} & ${others[0]}` : `${lead} + ${others.length} more`
+}
+
 function fullName(first?: string, last?: string) {
   return `${first ?? ''} ${last ?? ''}`.trim()
 }
@@ -203,9 +210,11 @@ function ClinicPatients() {
         phoneNumber: p.phoneNumber ?? undefined,
         imageUrl: p.imageUrl ?? undefined,
         patientNumber: p.patientNumber ?? undefined,
-        clinician: p.primaryPhysiotherapist
-          ? fullName(p.primaryPhysiotherapist.firstName, p.primaryPhysiotherapist.lastName)
-          : '',
+        // The lead, and anyone else on their care team
+        clinician: careTeamLabel(
+          p.primaryPhysiotherapist ? fullName(p.primaryPhysiotherapist.firstName, p.primaryPhysiotherapist.lastName) : '',
+          ((p.otherClinicians ?? []) as { firstName: string; lastName: string }[]).map((c) => fullName(c.firstName, c.lastName))
+        ),
         isReferral: p.source === 'rehabify_referral' || Boolean(referral),
         referralStatus: referral?.status ?? null,
         // lastSessionDate can be a future booking, so only past visits count as "last visit"

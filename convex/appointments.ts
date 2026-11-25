@@ -12,6 +12,7 @@ import { practiceZoneForPhysio, zoneLabel } from "./helpers/practiceZone";
 import { awaitingConfirmationFrom, isOpenAppointment } from "./helpers/appointmentStatus";
 import { isGoogleBusy } from "./helpers/slotHolds";
 import { requireClinicCareAccess } from "./helpers/careAccess";
+import { pastVisitDaysOf, pastVisitRefusal } from "./helpers/careTeam";
 import {
   CLEAR_PROPOSAL,
   emailAboutAppointment,
@@ -176,6 +177,11 @@ export const createAppointment = mutation({
     const DAY = 24 * 60 * 60 * 1000;
     // A visit that already happened can be added afterwards (agreed by phone and never entered)
     if (args.startTime < now - 366 * DAY) throw new ConvexError("That date is more than a year ago. Check the date.");
+    // A clinic's patient: the clinic decides how far back its clinicians may add one (Team page)
+    if (relationship.clinicId && args.endTime <= now) {
+      const refusal = pastVisitRefusal(pastVisitDaysOf(await ctx.db.get(relationship.clinicId)), args.startTime, startOfZonedDay(now));
+      if (refusal) throw new ConvexError(refusal);
+    }
     const repeats = [...new Set(args.repeatStartTimes ?? [])].filter((t) => t > args.startTime).sort((a, b) => a - b);
     if (repeats.length > MAX_REPEAT_VISITS - 1) throw new ConvexError(`You can book up to ${MAX_REPEAT_VISITS} visits at once.`);
     if ((repeats[repeats.length - 1] ?? args.startTime) > now + 366 * DAY) throw new ConvexError("Repeat visits can be booked up to a year ahead.");
@@ -2466,3 +2472,23 @@ export const submitPatientFeedback = mutation({
     return { success: true, feedbackId }
   },
 }) 
+
+
+/**
+ * How far back the signed-in physio may add a visit with this patient that already happened:
+ * a year for their own patients; a clinic's patient: what the clinic chose (Team page).
+ */
+export const getPastVisitRule = query({
+  args: { patientId: v.id("users") },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    const relationship = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_patient_and_physiotherapist", (q) => q.eq("patientId", args.patientId).eq("physiotherapistId", user._id))
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+    if (!relationship?.clinicId) return { days: 365, clinicName: null };
+    const clinic = await ctx.db.get(relationship.clinicId);
+    return { days: pastVisitDaysOf(clinic), clinicName: clinic?.name ?? null };
+  },
+});

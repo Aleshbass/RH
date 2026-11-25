@@ -164,6 +164,7 @@ import type * as helpers_careAccess from "../helpers/careAccess.js";
 import type * as helpers_careCircleAccess from "../helpers/careCircleAccess.js";
 import type * as helpers_careMoments from "../helpers/careMoments.js";
 import type * as helpers_careSignals from "../helpers/careSignals.js";
+import type * as helpers_careTeam from "../helpers/careTeam.js";
 import type * as helpers_clinicAdminAlerts from "../helpers/clinicAdminAlerts.js";
 import type * as helpers_clinicApproval from "../helpers/clinicApproval.js";
 import type * as helpers_clinicCards from "../helpers/clinicCards.js";
@@ -546,6 +547,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/careCircleAccess": typeof helpers_careCircleAccess;
   "helpers/careMoments": typeof helpers_careMoments;
   "helpers/careSignals": typeof helpers_careSignals;
+  "helpers/careTeam": typeof helpers_careTeam;
   "helpers/clinicAdminAlerts": typeof helpers_clinicAdminAlerts;
   "helpers/clinicApproval": typeof helpers_clinicApproval;
   "helpers/clinicCards": typeof helpers_clinicCards;

@@ -44,6 +44,8 @@ export type ClinicalNote = {
   diagnosis?: string
   measures: ClinicalMeasure[]
   editedAt?: number | null
+  /** Set when it was written on a later day than the visit it documents (sessionDate) */
+  writtenAt?: number | null
   voiceNote?: string | null
   attachments?: { url: string; contentType: string | null; size: number }[]
   /** Who wrote it, when the query says */

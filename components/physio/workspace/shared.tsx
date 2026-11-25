@@ -87,16 +87,22 @@ export type Workspace = {
     imageUrl?: string
     patientNumber?: string
   }
+  /** At a glance in the header, wherever it was recorded (convex/helpers/patientGlance.ts) */
   profile: {
+    /** "YYYY-MM-DD", whatever shape it was saved in */
     dateOfBirth?: string
     /** From the date of birth, or an age the care team noted (convex/helpers/patientFacts.ts ageOf) */
     ageYears: number | null
     gender?: string
-    /** patientProfiles.medicalHistorySummary (free text) */
+    /** The patient's details, else what the first assessment or Joy's intake noted */
     medicalHistory: string | null
+    /** Where the history came from when it isn't the patient's details */
+    medicalHistoryFrom?: { kind: 'note'; noteType: string; date: number } | { kind: 'joy'; date: number } | null
     city: string | null
     emergencyContact: { name: string; relationship: string; phone: string } | null
   } | null
+  /** A clinic's patient: every clinician on its team looking after them, the lead first */
+  careTeam?: { id: Id<'users'>; name: string; lead: boolean; you: boolean; since: number }[]
   relationship: { status: string; startDate: number; endDate?: number; source?: string; referredBy?: string }
   episode: {
     _id?: Id<'careEpisodes'>

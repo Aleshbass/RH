@@ -28,7 +28,8 @@ import { getClinicMember, getClinicStaffUserIds } from "./clinicTools";
 import { cleanMeasures, measureValidator, sameMeasures } from "./helpers/clinicalMeasures";
 import { autoTargetText, cleanGoalMeasure, firstValueSince, goalMeasureValidator, type GoalMeasure } from "./helpers/goalMeasures";
 import { physioMeasuredNotes } from "./helpers/measuredNotes";
-import { ageOf } from "./helpers/patientFacts";
+import { patientGlance } from "./helpers/patientFacts";
+import { careTeamFor, leadLink } from "./helpers/careTeam";
 import { isRehabifyCareInvoice, rehabifyCarePayoutKobo } from "./helpers/marketplaceInvoices";
 import {
   currentUser,
@@ -323,8 +324,8 @@ async function workspaceReader(ctx: QueryCtx, patientId: Id<"users">) {
       .collect()
   ).filter((r) => r.clinicId === clinic._id);
   if (rows.length === 0) return null;
-  const relationship =
-    rows.find((r) => r.status === "active") ?? rows.sort((a, b) => (b.endDate ?? b.startDate) - (a.endDate ?? a.startDate))[0];
+  // In care: the lead clinician's link (a patient can have several clinicians), else the latest
+  const relationship = leadLink(rows.filter((r) => r.status === "active")) ?? rows.sort((a, b) => (b.endDate ?? b.startDate) - (a.endDate ?? a.startDate))[0];
   return { viewer: member.user, scopeId: relationship.physiotherapistId, relationship, readOnly: true as const, clinic };
 }
 
@@ -340,10 +341,6 @@ export const getPatientWorkspace = query({
     if (!patient) return null;
 
     const now = args.now ?? Date.now();
-    const profile = await ctx.db
-      .query("patientProfiles")
-      .withIndex("by_user_id", (q) => q.eq("userId", args.patientId))
-      .first();
 
     // Episodes (synthesised for patients who joined before episodes existed)
     const episodes = await episodesFor(ctx, physio._id, args.patientId, relationship.clinicId);
@@ -472,6 +469,23 @@ export const getPatientWorkspace = query({
       .take(200);
     const myNotes = notes.filter(ours);
 
+    // Age, gender, date of birth, town and medical history for the header, wherever they were
+    // recorded (older patients: a second profile, the first assessment, Joy's intake)
+    const joyIntake = await ctx.db
+      .query("joyIntakes")
+      .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
+      .order("desc")
+      .first();
+    const profile = await patientGlance(ctx, patient, {
+      notes: myNotes,
+      // Only when they agreed Joy could pass it to their clinician
+      joyIntake: joyIntake && joyIntake.consent?.shareWithClinician !== false ? joyIntake : null,
+      now,
+    });
+
+    // A clinic's patient can be looked after by more than one clinician: the whole care team
+    const careTeam = clinicId ? await careTeamFor(ctx, args.patientId, clinicId, access.viewer._id) : [];
+
     return {
       patient: {
         _id: patient._id,
@@ -482,18 +496,11 @@ export const getPatientWorkspace = query({
         imageUrl: patient.imageUrl,
         patientNumber: patient.patientNumber,
       },
-      // patientProfiles holds a free-text history summary and one emergency contact
-      profile: profile
-        ? {
-            dateOfBirth: profile.dateOfBirth,
-            // From the date of birth, or an age the care team noted: shown at a glance in the header
-            ageYears: ageOf(profile, now),
-            gender: profile.gender,
-            medicalHistory: profile.medicalHistorySummary?.trim() || null,
-            city: profile.city ?? null,
-            emergencyContact: profile.emergencyContact ?? null,
-          }
-        : null,
+      // At a glance in the header (helpers/patientGlance.ts): date of birth always "YYYY-MM-DD",
+      // age from it (or an age the care team noted), medical history and where it was found
+      profile,
+      // Everyone on the clinic's team looking after them (empty outside a clinic)
+      careTeam,
       relationship: {
         status: relationship.status,
         startDate: relationship.startDate,
@@ -638,6 +645,8 @@ export const getClinicalNotes = query({
       notes.map(async (n) => ({
         _id: n._id,
         sessionDate: n.sessionDate,
+        /** Set when it was written on a later day than the visit it documents */
+        writtenAt: n.writtenAt ?? null,
         noteType: n.noteType ?? "treatment_note",
         subjectiveAssessment: n.subjectiveAssessment,
         objectiveAssessment: n.objectiveAssessment,
@@ -1539,23 +1548,29 @@ export async function insertClinicalNote(
   }
 
   let appointmentId = args.appointmentId;
+  let visitStart: number | null = null;
   if (appointmentId) {
     const appointment = await ctx.db.get(appointmentId);
     if (!appointment || appointment.physiotherapistId !== physio._id || appointment.patientId !== args.patientId) {
       throw new ConvexError("That appointment isn't with this patient.");
     }
+    visitStart = appointment.startTime;
   } else {
     const labels = { initial_assessment: "Initial assessment", treatment_note: "Clinical note", follow_up: "Follow-up" } as const;
     appointmentId = await anchorAppointment(ctx, physio, relationship, labels[args.noteType]);
   }
 
+  const written = whenItHappened(args.occurredAt, Date.now());
   const noteId = await ctx.db.insert("sessionLogs", {
     appointmentId,
     patientId: args.patientId,
     physiotherapistId: physio._id,
     clinicId: relationship.clinicId,
-    // When it was written (a note written offline arrives later)
-    sessionDate: whenItHappened(args.occurredAt, Date.now()),
+    // When it was written (a note written offline arrives later). A note for a visit on an earlier
+    // day (added afterwards, e.g. a visit nobody booked) is dated to that visit; writtenAt keeps
+    // when it was written, shown as "Written later"
+    sessionDate: noteDateFor(visitStart, written),
+    writtenAt: noteDateFor(visitStart, written) === written ? undefined : written,
     noteType: args.noteType,
     ...sections,
     measures: measures.length ? measures : undefined,
@@ -1566,6 +1581,13 @@ export async function insertClinicalNote(
   });
   await ensureActiveEpisode(ctx, physio, relationship);
   return { noteId };
+}
+
+/** A note's date: the visit's, when the visit was on an earlier day (Lagos) than the writing. */
+function noteDateFor(visitStart: number | null, written: number) {
+  if (visitStart === null) return written;
+  const startOfWritingDay = Math.floor((written + LAGOS_OFFSET) / DAY) * DAY - LAGOS_OFFSET;
+  return visitStart < startOfWritingDay ? visitStart : written;
 }
 
 /** The physio who wrote a clinical note corrects or adds to it. The earlier wording is kept. */
@@ -1801,7 +1823,10 @@ export const completeCare = mutation({
         .query("appointments")
         .withIndex("by_patient_id_and_time", (q) => q.eq("patientId", args.patientId).gte("startTime", now))
         .collect();
-      for (const appointment of upcoming.filter((a) => a.physiotherapistId === physio._id && UPCOMING_STATUSES.has(a.status))) {
+      // A clinic's patient: the clinic's visits with anyone on the care team, since care ends for all of them
+      const ended = (a: Doc<"appointments">) =>
+        a.physiotherapistId === physio._id || (clinicCare && a.clinicId === relationship.clinicId);
+      for (const appointment of upcoming.filter((a) => ended(a) && UPCOMING_STATUSES.has(a.status))) {
         await ctx.db.patch(appointment._id, {
           status: "cancelled_by_therapist",
           cancellationReason: "Treatment completed",
@@ -1825,6 +1850,30 @@ export const completeCare = mutation({
 
     // The patient leaves the active list; records stay readable for the physio
     await ctx.db.patch(relationship._id, { status: "inactive", endDate: now });
+    // A clinic's course of care is the whole team's: the other clinicians on it are told and the
+    // patient leaves their lists too
+    if (clinicCare) {
+      const team = (
+        await ctx.db
+          .query("patientPhysiotherapistRelationships")
+          .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
+          .collect()
+      ).filter((r) => r._id !== relationship._id && r.clinicId === relationship.clinicId && r.status === "active");
+      const patientName = fullName(await ctx.db.get(args.patientId));
+      for (const link of team) {
+        await ctx.db.patch(link._id, { status: "inactive", endDate: now });
+        if (link.physiotherapistId === physio._id) continue;
+        await notify(
+          ctx,
+          link.physiotherapistId,
+          "care_completed",
+          `Care completed for ${patientName}`,
+          `${fullName(physio)} completed ${patientName}'s course of care, so they've left your active patients. Their record stays readable.`,
+          `/dashboard/physiotherapist/patients/${args.patientId}`,
+          "low"
+        );
+      }
+    }
     // A referred patient's referral is complete (the referring doctor is told)
     await advancePatientReferrals(ctx, args.patientId, "completed", { actorType: "physiotherapist", actorId: String(physio._id) });
 

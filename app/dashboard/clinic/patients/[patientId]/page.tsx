@@ -129,11 +129,15 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
   const clinicians = useClinicianOptions()
   const reopenCare = useMutation(api.clinicTools.reopenPatientCare)
   const reassignPatient = useMutation(api.patients.reassignPatient)
+  // More than one clinician can look after a patient (clinic feedback, 24 Nov 2026)
+  const addToCareTeam = useMutation(api.clinicTools.addToCareTeam)
+  const removeFromCareTeam = useMutation(api.clinicTools.removeFromCareTeam)
+  const setCareTeamLead = useMutation(api.clinicTools.setCareTeamLead)
   const resendInvite = useMutation(api.clinicTools.resendClinicPatientInvite)
 
   const initialTab = searchParams.get('tab') as TabId | null
   const [tab, setTab] = useState<TabId>(initialTab && TABS.some((t) => t.id === initialTab) ? initialTab : 'overview')
-  const [dialog, setDialog] = useState<'edit' | 'reopen' | 'clinician' | 'family' | null>(null)
+  const [dialog, setDialog] = useState<'edit' | 'reopen' | 'clinician' | 'addClinician' | 'family' | null>(null)
   const [sendingInvite, setSendingInvite] = useState(false)
   // "Connect to Joy on WhatsApp": exercises, reminders and visits on WhatsApp (convex/joyConnect.ts)
   const joyConnect = useConnectToJoy()
@@ -195,7 +199,13 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
   const clinicianFirst = clinicianName?.split(' ')[0] ?? null
   const needsClinician = isActive && !workspace.clinicView?.clinicianId
   const primary = record.primaryClinician
-  const changeOptions = clinicians.options.filter((o) => o.id !== primary?._id)
+  // Everyone looking after them, the lead first
+  const careTeam = workspace.careTeam ?? []
+  const shared = careTeam.length > 1
+  const onTeam = new Set<string>(careTeam.map((m) => m.id))
+  // Changing the lead hands over to someone new; a team member is made lead from their row
+  const changeOptions = clinicians.options.filter((o) => o.id !== primary?._id && !onTeam.has(o.id))
+  const addOptions = clinicians.options.filter((o) => !onTeam.has(o.id))
   const followUps = (record.sessionLogs as unknown as (FollowUpCall & { noteType?: string })[]).filter((log) => log.noteType === 'follow_up_outreach')
 
   const bookHref = `${CLINIC}/appointments?book=1&patient=${patientId}`
@@ -227,6 +237,49 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
       playSound('error')
       toast.error(friendlyError(err, 'Could not reopen care. Please try again.'))
       throw err
+    }
+  }
+
+  const handleAddClinician = async (clinicianId: string) => {
+    try {
+      await addToCareTeam({ patientId, clinicianId: clinicianId as Id<'users'> })
+      playSound('success')
+      const chosen = clinicians.options.find((o) => o.id === clinicianId)?.label
+      toast.success(`${chosen ?? 'They'} joined ${patient.firstName ?? 'this patient'}’s care team`)
+    } catch (err) {
+      playSound('error')
+      toast.error(friendlyError(err, 'Could not add the clinician. Please try again.'))
+      throw err
+    }
+  }
+
+  const handleMakeLead = async (member: { id: Id<'users'>; name: string }) => {
+    if (!requireFullAccess('Change the lead clinician')) return
+    try {
+      await setCareTeamLead({ patientId, clinicianId: member.id })
+      playSound('success')
+      toast.success(`${member.name} now leads ${patient.firstName ?? 'this patient'}’s care`)
+    } catch (err) {
+      playSound('error')
+      toast.error(friendlyError(err, 'Could not change the lead. Please try again.'))
+    }
+  }
+
+  const handleRemoveFromTeam = async (member: { id: Id<'users'>; name: string }) => {
+    if (!requireFullAccess('Change the care team')) return
+    if (!window.confirm(`Take ${member.name} off ${name}’s care team? The notes they wrote stay on the record.`)) return
+    try {
+      const result = await removeFromCareTeam({ patientId, clinicianId: member.id })
+      playSound('reject')
+      toast.success(`${member.name} is off the care team`, {
+        description:
+          result.upcomingVisits > 0
+            ? `They still have ${result.upcomingVisits} visit${result.upcomingVisits === 1 ? '' : 's'} booked with ${patient.firstName ?? 'this patient'}. Move or cancel ${result.upcomingVisits === 1 ? 'it' : 'them'} from Appointments.`
+            : undefined,
+      })
+    } catch (err) {
+      playSound('error')
+      toast.error(friendlyError(err, 'Could not change the care team. Please try again.'))
     }
   }
 
@@ -263,7 +316,7 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
               <div className="min-w-0">
                 <h1 className="truncate text-2xl font-semibold tracking-tight text-pt-ink sm:text-[28px]">{name}</h1>
                 {/* Age, gender, date of birth and town, at first glance */}
-                <PatientFacts profile={workspace.profile} />
+                <PatientFacts profile={workspace.profile} onAdd={() => requireFullAccess('Edit patient details') && setDialog('edit')} />
                 <p className="truncate text-sm text-pt-muted">{[patient.phoneNumber, patient.email].filter(Boolean).join(' · ') || 'No contact details'}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                   <RehabifyId value={patient.patientNumber} className="rounded-full px-2.5 text-xs" />
@@ -365,19 +418,47 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
           {/* Past medical history, so it's never more than a glance away */}
           <MedicalHistoryLine
             history={workspace.profile?.medicalHistory}
+            from={workspace.profile?.medicalHistoryFrom}
             onAdd={() => requireFullAccess('Edit patient details') && setDialog('edit')}
             className="mt-5 border-t border-pt-line pt-4"
           />
 
-          {/* Who treats them: the owner assigns, the clinician treats */}
-          <div className="mt-4 flex flex-col gap-3 border-t border-pt-line pt-4 sm:flex-row sm:items-center">
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-              <IconChip icon={needsClinician ? UserPlus : Stethoscope} tone={needsClinician ? 'ink' : 'green'} />
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-pt-faint">Clinician</p>
-                <p className="truncate text-sm font-semibold text-pt-ink">
-                  {needsClinician ? 'Needs a clinician' : clinicianName ?? (isActive ? 'Not assigned' : 'Care has ended')}
-                </p>
+          {/* Who treats them: the owner assigns, the clinicians treat. More than one can look after
+              a patient (a care team); one of them leads */}
+          <div className="mt-4 flex flex-col gap-3 border-t border-pt-line pt-4 sm:flex-row sm:items-start">
+            <div className="flex min-w-0 flex-1 items-start gap-3">
+              <IconChip icon={needsClinician ? UserPlus : shared ? Users : Stethoscope} tone={needsClinician ? 'ink' : 'green'} />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-pt-faint">{shared ? 'Care team' : 'Clinician'}</p>
+                {!shared || !isActive ? (
+                  <p className="truncate text-sm font-semibold text-pt-ink">
+                    {needsClinician ? 'Needs a clinician' : clinicianName ?? (isActive ? 'Not assigned' : 'Care has ended')}
+                  </p>
+                ) : (
+                  <ul className="mt-0.5 space-y-1">
+                    {careTeam.map((member) => (
+                      <li key={member.id} className="flex min-w-0 items-center gap-2">
+                        <span className="truncate text-sm font-semibold text-pt-ink">{member.name}</span>
+                        {member.lead && <StatusBadge tone="green">Lead</StatusBadge>}
+                        {!member.lead && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-pt-muted" aria-label={`Options for ${member.name}`}>
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-52 rounded-xl">
+                              <DropdownMenuItem onClick={() => void handleMakeLead(member)}>Make lead</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => void handleRemoveFromTeam(member)} className="text-pt-rose-fg">
+                                Remove from care team
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
             {isActive && (
@@ -387,7 +468,17 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
                     className={cn(needsClinician ? primaryButtonClass : secondaryButtonClass, 'h-9')}
                     onClick={() => requireFullAccess('Change clinician') && setDialog('clinician')}
                   >
-                    {needsClinician ? 'Assign a clinician' : 'Change clinician'}
+                    {needsClinician ? 'Assign a clinician' : shared ? 'Change lead' : 'Change clinician'}
+                  </Button>
+                )}
+                {/* Another clinician alongside the one(s) looking after them */}
+                {!needsClinician && careTeam.length > 0 && (
+                  <Button
+                    className={cn(secondaryButtonClass, 'h-9')}
+                    onClick={() => requireFullAccess('Add a clinician') && setDialog('addClinician')}
+                  >
+                    <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+                    Add clinician
                   </Button>
                 )}
                 {isOwner && clinicianFirst && (
@@ -501,12 +592,26 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
         <ClinicianPickerDialog
           open={dialog === 'clinician'}
           onOpenChange={(open) => setDialog(open ? 'clinician' : null)}
-          title={needsClinician ? 'Assign a clinician' : 'Change clinician'}
-          description={`${name} moves to the clinician you choose, who carries on with the same care plan, notes and programmes.`}
-          submitLabel={needsClinician ? 'Assign' : 'Change clinician'}
+          title={needsClinician ? 'Assign a clinician' : shared ? 'Change lead clinician' : 'Change clinician'}
+          description={
+            shared
+              ? `The clinician you choose leads ${name}’s care in place of ${clinicianName ?? 'the current lead'}, who leaves the care team. To make someone already on the team lead, use the menu by their name.`
+              : `${name} moves to the clinician you choose, who carries on with the same care plan, notes and programmes.`
+          }
+          submitLabel={needsClinician ? 'Assign' : shared ? 'Change lead' : 'Change clinician'}
           options={changeOptions}
           defaultId={null}
           onConfirm={handleChangeClinician}
+        />
+        <ClinicianPickerDialog
+          open={dialog === 'addClinician'}
+          onOpenChange={(open) => setDialog(open ? 'addClinician' : null)}
+          title="Add to the care team"
+          description={`For patients who need more visits than one clinician can give. ${clinicianName ?? 'Their clinician'} stays the lead. The clinician you add works on the same record (notes, care plan, programmes), books their own visits and writes their own notes.`}
+          submitLabel="Add to care team"
+          options={addOptions}
+          defaultId={addOptions.length === 1 ? addOptions[0].id : null}
+          onConfirm={handleAddClinician}
         />
       </PageContainer>
     </WorkspaceReadOnly>
