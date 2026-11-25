@@ -937,6 +937,10 @@ def front_turn(
             if field == "name" and "name" not in found:
                 # Asked for their name, they gave it: a full name ("Funke Adeyemi") or "Mrs Funke"
                 found.update(_just_the_name(user_text))
+            if field == "name" and not found.get("city"):
+                # A reply to the name question is only a place when it names a known city: "Mrs
+                # Bisi" style answers were saved as a patient's area (Nov 2026)
+                found.pop("area", None)
             if found.get("name") and "name" in missing:
                 patient.name = found["name"]
             if found.get("age") and "age" in missing:

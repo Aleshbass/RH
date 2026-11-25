@@ -93,6 +93,8 @@ def test_consent_in_any_wording(text, expected):
 
 @pytest.mark.parametrize("text, expected", [
     ("Funke Adeyemi", {"name": "Funke"}),
+    ("Mrs Bisi", {"name": "Bisi"}),
+    ("Mrs Bisi Okon", {"name": "Bisi"}),
     ("Mrs Funke Adeyemi", {"name": "Funke"}),
     ("my name is Funke", {"name": "Funke"}),
     ("funke", {"name": "Funke"}),
@@ -382,9 +384,11 @@ def test_agreeing_in_their_own_words_and_a_full_name_move_on(db_session, new_pat
     _turn(db_session, new_patient, STORY, "English")
     name = _turn(db_session, new_patient, STORY, "Ok I agree")
     assert name.reply_text == "What's your first name?"
-    age = _turn(db_session, new_patient, STORY, "Funke Adeyemi")
+    age = _turn(db_session, new_patient, STORY, "Mrs Bisi Okon")
     assert age.reply_text.startswith("How old are you?")
-    assert db_session.get(Patient, new_patient.person_id).name == "Funke"
+    patient = db_session.get(Patient, new_patient.person_id)
+    # A title and surname were asked again and saved as the area (Nov 2026)
+    assert patient.name == "Bisi" and patient.area is None
 
 
 def test_an_unclear_consent_answer_is_not_asked_the_same_way_forever(db_session, new_patient, rh):
