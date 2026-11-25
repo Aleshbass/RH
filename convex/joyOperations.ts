@@ -295,6 +295,8 @@ export const executeMutation = internalMutation({
       set("state", text(data.state, 40) || stateForPlace(text(data.city, 60) || text(data.area, 80)) || undefined);
       set("city", text(data.city, 60) || undefined);
       set("area", text(data.area, 80) || undefined);
+      // Joy asks for the city and country (owner, 25 Nov 2026)
+      set("country", text(data.country, 60) || undefined);
       if (summary) {
         const noted = `From WhatsApp sign-up: ${summary}`;
         profilePatch.medicalHistorySummary = (

@@ -1,8 +1,10 @@
 /**
- * "Help me choose a physio" on Find a Physio: three questions (what's wrong, video or home visit,
- * where they are). A signed-in patient's answers are saved to their record; a guest also leaves a
- * name and WhatsApp number. Either way the care team gets a "help_choosing" item in Patients
- * looking for care, with the physio profiles they opened, so someone can pair them straight away.
+ * "Help me choose a physio" on Find a Physio, asked in Joy's order (owner, 25 Nov 2026): their
+ * name and who it's for, age, city and country, what's wrong, and the same red-flag check. A
+ * signed-in patient's own answers are saved to their record (not when booking for someone else);
+ * a guest also leaves a WhatsApp number. Either way the care team gets a "help_choosing" item in
+ * Patients looking for care, with the physio profiles they opened, so someone can pair them. Any
+ * red flag is said first in the alert, and the page tells them to get urgent care.
  */
 import { ConvexError, v } from "convex/values";
 import type { WithoutSystemFields } from "convex/server";
@@ -11,6 +13,17 @@ import type { Doc } from "./_generated/dataModel";
 import { alertAdmins } from "./helpers/careSignals";
 import { loadPatientProfile } from "./helpers/patientFacts";
 import { recordPatientView, validPhysioIds } from "./helpers/patientViews";
+import { stateForPlace } from "./helpers/startingZones";
+
+/** Joy's red-flag list (joy/backend/app/triage/self_referral.py RED_FLAG_ITEMS), by id */
+const RED_FLAG_WORDS: Record<string, string> = {
+  "1": "chest pain, breathing or fainting",
+  "2": "new weakness, numbness or trouble speaking",
+  "3": "bladder or bowel control",
+  "4": "severe or rapidly worsening pain",
+  "5": "weight loss, fever or night sweats",
+  "6": "recent major injury or accident",
+};
 
 const HOUR = 60 * 60 * 1000;
 // Guests can't be traced to an account, so cap how many reach the team in an hour
@@ -75,8 +88,17 @@ export const askForHelp = mutation({
   args: {
     complaint: v.string(),
     format: v.union(v.literal("online"), v.literal("home_visit"), v.literal("either")),
-    state: v.string(),
+    // Nigeria: the state (or worked out from the city)
+    state: v.optional(v.string()),
     area: v.optional(v.string()),
+    forWhom: v.optional(v.union(v.literal("self"), v.literal("other"))),
+    // Booking for someone else: their first name
+    patientName: v.optional(v.string()),
+    age: v.optional(v.number()),
+    city: v.optional(v.string()),
+    country: v.optional(v.string()),
+    // Ids from Joy's red-flag list; empty means "None of these"
+    redFlags: v.optional(v.array(v.string())),
     // Guests only
     name: v.optional(v.string()),
     phone: v.optional(v.string()),
@@ -88,36 +110,65 @@ export const askForHelp = mutation({
   handler: async (ctx, args) => {
     if (args.website?.trim()) return { ok: true };
     const complaint = clean(args.complaint, 300);
-    const state = clean(args.state, 40);
+    const city = clean(args.city, 60);
+    const country = clean(args.country, 60) ?? (city || args.state ? "Nigeria" : undefined);
+    const nigeria = !country || country === "Nigeria";
+    const state = clean(args.state, 40) ?? (nigeria ? stateForPlace(city) ?? city : undefined);
     const area = clean(args.area, 80);
+    const forOther = args.forWhom === "other";
+    const patientName = forOther ? clean(args.patientName, 60) : undefined;
+    const age = typeof args.age === "number" && Number.isInteger(args.age) && args.age > 0 && args.age < 120 ? args.age : undefined;
+    const redFlags = [...new Set((args.redFlags ?? []).filter((id) => id in RED_FLAG_WORDS))];
     if (!complaint) throw new ConvexError("Tell us what's wrong.");
-    if (!state) throw new ConvexError("Choose your state.");
+    if (!state && !city && !country) throw new ConvexError("Add your city and country.");
     if (args.format === "home_visit" && !area) throw new ConvexError("Add your area so we can find a physio who visits it.");
 
     const now = Date.now();
     const user = await signedInUser(ctx);
     if (user && user.role !== "patient") throw new ConvexError("This is for patients. You're signed in with a different kind of account.");
     const viewedIds = await validPhysioIds(ctx, args.viewed);
-    const place = [area, state].filter(Boolean).join(", ");
-    const detail = `asked for help choosing: ${complaint} · ${FORMAT_WORD[args.format as Format]} · ${place}`.slice(0, 240);
+    const place = [area, city, nigeria && state !== city ? state : undefined, nigeria ? undefined : country].filter(Boolean).join(", ");
+    const who = forOther ? ` for ${patientName ?? "someone they care for"}` : "";
+    const flags = redFlags.length ? `RED FLAGS: ${redFlags.map((id) => RED_FLAG_WORDS[id]).join("; ")} · ` : "";
+    const detail = `${flags}asked for help choosing${who}: ${complaint}${age ? ` · ${age} yrs` : ""} · ${place || "place not given"}${
+      args.format !== "either" ? ` · ${FORMAT_WORD[args.format as Format]}` : ""
+    }`.slice(0, 240);
+    const request = {
+      complaint,
+      format: args.format,
+      state,
+      area,
+      viewedPhysioIds: viewedIds.length ? viewedIds : undefined,
+      forWhom: args.forWhom,
+      patientName,
+      age,
+      city,
+      country,
+      redFlags: redFlags.length ? redFlags : undefined,
+    };
 
     if (user) {
-      // Their own answers go on their record, where the care team and their physio will see them
-      const profile = await loadPatientProfile(ctx, user);
-      const patch: Partial<WithoutSystemFields<Doc<"patientProfiles">>> = {
-        mainComplaint: complaint,
-        state,
-        ...(area ? { area } : {}),
-        ...(args.format !== "either" ? { preferredFormat: args.format } : {}),
-      };
-      if (profile) await ctx.db.patch(profile._id, patch);
-      else {
-        const profileId = await ctx.db.insert("patientProfiles", { userId: user._id, country: "Nigeria", ...patch });
-        await ctx.db.patch(user._id, { patientProfileId: profileId });
+      // Their own answers go on their record, where the care team and their physio will see them.
+      // Booking for someone else: that person's details stay on the request, not this record.
+      if (!forOther) {
+        const profile = await loadPatientProfile(ctx, user);
+        const patch: Partial<WithoutSystemFields<Doc<"patientProfiles">>> = {
+          mainComplaint: complaint,
+          ...(state ? { state } : {}),
+          ...(city ? { city } : {}),
+          ...(country ? { country } : {}),
+          ...(area ? { area } : {}),
+          ...(age && !profile?.dateOfBirth ? { ageYears: age, ageRecordedAt: now } : {}),
+          ...(args.format !== "either" ? { preferredFormat: args.format } : {}),
+        };
+        if (profile) await ctx.db.patch(profile._id, patch);
+        else {
+          const profileId = await ctx.db.insert("patientProfiles", { userId: user._id, country: "Nigeria", ...patch });
+          await ctx.db.patch(user._id, { patientProfileId: profileId });
+        }
       }
       for (const physioId of viewedIds) await recordPatientView(ctx, user._id, physioId, now);
 
-      const request = { complaint, format: args.format, state, area, viewedPhysioIds: viewedIds.length ? viewedIds : undefined };
       // A number to reach them on when the account has none (kept on the request, not the account)
       const contactPhone = user.phoneNumber ? undefined : normalisePhone(args.phone) ?? undefined;
       if (!user.phoneNumber && args.phone?.trim() && !contactPhone) {
@@ -130,6 +181,8 @@ export const askForHelp = mutation({
       const open = signals.find((s) => s.status === "open" && s.kind === "help_choosing");
       if (open) {
         await ctx.db.patch(open._id, { request, detail, lastSeenAt: now, ...(contactPhone ? { guestPhone: contactPhone } : {}) });
+        // Red flags on an updated request still reach the team at once
+        if (redFlags.length) await alertAdmins(ctx, "help_choosing", `${user.patientNumber ?? user.firstName ?? "A patient"}: ${detail}`);
       } else {
         await ctx.db.insert("careSignals", {
           kind: "help_choosing",
@@ -162,10 +215,10 @@ export const askForHelp = mutation({
       .query("careSignals")
       .withIndex("by_status", (q) => q.eq("status", "open").gte("createdAt", now - 3 * 24 * HOUR))
       .take(400);
-    const request = { complaint, format: args.format, state, area, viewedPhysioIds: viewedIds.length ? viewedIds : undefined };
     const same = recent.find((s) => s.kind === "help_choosing" && !s.patientId && s.guestPhone === phone);
     if (same) {
       await ctx.db.patch(same._id, { request, detail, guestName: name, lastSeenAt: now });
+      if (redFlags.length) await alertAdmins(ctx, "help_choosing", `${name}: ${detail}`);
       return { ok: true };
     }
     const lastHour = recent.filter((s) => s.kind === "help_choosing" && !s.patientId && s.createdAt >= now - HOUR).length;

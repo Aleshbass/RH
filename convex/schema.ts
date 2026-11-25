@@ -548,6 +548,13 @@ export default defineSchema({
       state: v.optional(v.string()),
       area: v.optional(v.string()),
       viewedPhysioIds: v.optional(v.array(v.id("users"))),
+      // Same order as Joy (owner, 25 Nov 2026): who it's for, age, city and country, red flags
+      forWhom: v.optional(v.union(v.literal("self"), v.literal("other"))),
+      patientName: v.optional(v.string()),
+      age: v.optional(v.number()),
+      city: v.optional(v.string()),
+      country: v.optional(v.string()),
+      redFlags: v.optional(v.array(v.string())),
     })),
     status: v.union(v.literal("open"), v.literal("handled")),
     patientId: v.optional(v.id("users")),

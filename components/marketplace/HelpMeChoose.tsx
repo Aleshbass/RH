@@ -1,10 +1,12 @@
 'use client'
 
 /**
- * "Help me choose a physio" on Find a Physio: what's wrong, video or home visit, and where they
- * are. A signed-in patient's answers are saved to their record; a guest also leaves a name and a
- * WhatsApp number. The care team sees it at once in Patients looking for care, with the physio
- * profiles opened on this device, and contacts them to pair them (convex/findHelp.ts).
+ * "Help me choose a physio" on Find a Physio, in the same order as Joy on WhatsApp (owner, 25 Nov
+ * 2026): their name and who it's for, age, city and country, what's wrong, and Joy's red-flag
+ * check. A signed-in patient's answers are saved to their record; a guest also leaves a WhatsApp
+ * number. The care team sees it at once in Patients looking for care, with the physio profiles
+ * opened on this device, and contacts them to pair them (convex/findHelp.ts). Any red flag: the
+ * page says to get urgent care first, and the team is told.
  */
 
 import { useEffect, useState, type FormEvent } from 'react'
@@ -12,9 +14,8 @@ import Link from 'next/link'
 import { useConvexAuth, useMutation, useQuery } from 'convex/react'
 import { makeFunctionReference } from 'convex/server'
 import { ConvexError } from 'convex/values'
-import { CheckCircle2, House, Loader2, Video, WhatsApp } from '@/components/icons'
+import { AlertTriangle, CheckCircle2, Loader2, WhatsApp } from '@/components/icons'
 import { joyWhatsAppUrl } from '@/lib/joyWhatsApp'
-import { NIGERIAN_STATES } from '@/lib/nigerianStates'
 import { viewedPhysioIds } from '@/lib/viewedPhysios'
 import { cn } from '@/lib/utils'
 
@@ -28,7 +29,22 @@ type MyAnswers =
 const myAnswersRef = makeFunctionReference<'query', Record<string, never>, MyAnswers>('findHelp:myAnswers')
 const askRef = makeFunctionReference<
   'mutation',
-  { complaint: string; format: Format; state: string; area?: string; name?: string; phone?: string; viewed?: string[]; website?: string },
+  {
+    complaint: string
+    format: Format
+    state?: string
+    area?: string
+    forWhom?: 'self' | 'other'
+    patientName?: string
+    age?: number
+    city?: string
+    country?: string
+    redFlags?: string[]
+    name?: string
+    phone?: string
+    viewed?: string[]
+    website?: string
+  },
   { ok: boolean }
 >('findHelp:askForHelp')
 
@@ -44,11 +60,19 @@ const TOPICS = [
   'Something else',
 ]
 
-const FORMATS: { value: Format; label: string; hint: string; icon?: typeof Video }[] = [
-  { value: 'online', label: 'Video call', hint: 'From home, on your phone', icon: Video },
-  { value: 'home_visit', label: 'Home visit', hint: 'A physio comes to you', icon: House },
-  { value: 'either', label: 'Either is fine', hint: 'Whatever is sooner' },
+/** Joy's red-flag list (joy/backend/app/triage/self_referral.py RED_FLAG_ITEMS) */
+const RED_FLAGS = [
+  { id: '1', label: 'Chest pain, trouble breathing, or fainting' },
+  { id: '2', label: 'New weakness, numbness, or trouble speaking' },
+  { id: '3', label: 'Loss of bladder or bowel control' },
+  { id: '4', label: 'Severe or rapidly worsening pain' },
+  { id: '5', label: 'Unexplained weight loss, fever, or night sweats' },
+  { id: '6', label: 'Recent major injury or accident' },
 ]
+
+const COUNTRIES = ['Nigeria', 'Ghana', 'United Kingdom', 'United States', 'Canada', 'Ireland', 'South Africa', 'Kenya', 'United Arab Emirates', 'Other']
+
+const REHABIFY_PHONE = '0806 152 5811'
 
 const SENT_KEY = 'rh_help_choose_sent'
 const SENT_FOR_MS = 24 * 60 * 60 * 1000
@@ -71,9 +95,15 @@ export function HelpMeChoose() {
   const [open, setOpen] = useState(false)
   const [topic, setTopic] = useState('')
   const [details, setDetails] = useState('')
-  const [format, setFormat] = useState<Format | ''>('')
-  const [state, setState] = useState('')
-  const [area, setArea] = useState('')
+  const [forWhom, setForWhom] = useState<'self' | 'other' | ''>('')
+  const [patientName, setPatientName] = useState('')
+  const [age, setAge] = useState('')
+  const [city, setCity] = useState('')
+  const [country, setCountry] = useState('Nigeria')
+  const [redFlags, setRedFlags] = useState<string[]>([])
+  const [noneOfThese, setNoneOfThese] = useState(false)
+  // What was sent had a red flag: the page says to get urgent care
+  const [urgent, setUrgent] = useState(false)
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [website, setWebsite] = useState('')
@@ -107,10 +137,14 @@ export function HelpMeChoose() {
         setDetails(mine.complaint)
       }
     }
-    if (mine.format === 'online' || mine.format === 'home_visit') setFormat(mine.format)
-    if (mine.state) setState(mine.state)
-    if (mine.area) setArea(mine.area)
+    const place = [mine.area, mine.state].filter(Boolean).join(', ')
+    if (place) setCity(place)
   }, [mine, prefilled])
+
+  const toggleFlag = (id: string) => {
+    setNoneOfThese(false)
+    setRedFlags((flags) => (flags.includes(id) ? flags.filter((f) => f !== id) : [...flags, id]))
+  }
 
   // Physios and admins browsing aren't asked
   if (authLoading || (isAuthenticated && (mine === undefined || mine === null || !mine.isPatient))) return null
@@ -123,26 +157,33 @@ export function HelpMeChoose() {
     event.preventDefault()
     setError(null)
     const complaint = topic === 'Something else' ? details.trim() : [topic, details.trim()].filter(Boolean).join(': ')
+    const years = Number(age)
+    if (isGuest && !name.trim()) return setError('Add your name.')
+    if (!forWhom) return setError('Choose who the physio session is for.')
+    if (!(years > 0 && years < 120)) return setError(forWhom === 'other' ? 'Add their age.' : 'Add your age.')
+    if (!city.trim()) return setError('Add the city.')
     if (!topic) return setError('Choose what’s wrong.')
     if (!complaint) return setError('Tell us a little about what’s wrong.')
-    if (!format) return setError('Choose video call, home visit or either.')
-    if (!state) return setError('Choose your state.')
-    if (format === 'home_visit' && !area.trim()) return setError('Add your area so we can find a physio who visits it.')
-    if (isGuest && !name.trim()) return setError('Add your name.')
+    if (!noneOfThese && redFlags.length === 0) return setError('Tick any that apply, or None of these.')
     if (needPhone && phone.replace(/\D/g, '').length < 10) return setError('Add a WhatsApp number we can reach you on.')
     setBusy(true)
     try {
       await ask({
         complaint,
-        format,
-        state,
-        area: area.trim() || undefined,
+        format: 'either',
+        forWhom,
+        patientName: forWhom === 'other' ? patientName.trim() || undefined : undefined,
+        age: years,
+        city: city.trim(),
+        country,
+        redFlags,
         name: isGuest ? name.trim() : undefined,
         phone: needPhone ? phone.trim() : undefined,
         viewed: viewedPhysioIds(),
         website: website || undefined,
       })
       const now = Date.now()
+      setUrgent(redFlags.length > 0)
       setSentAt(now)
       setOpen(false)
       try {
@@ -155,6 +196,27 @@ export function HelpMeChoose() {
     } finally {
       setBusy(false)
     }
+  }
+
+  // Sent with a red flag: urgent care first, as Joy says it
+  if (sentAt && !open && urgent) {
+    return (
+      <div className="mt-8 max-w-3xl rounded-3xl border border-[#be123c]/30 bg-rh-blush p-5 sm:p-6" role="alert">
+        <div className="flex gap-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#be123c]" />
+          <div>
+            <p className="font-semibold text-rh-ink">Please get urgent medical care first.</p>
+            <p className="mt-1 text-sm text-rh-ink/75">
+              Some of these symptoms can need urgent assessment. Go to the nearest hospital emergency department, or call Rehabify on{' '}
+              <a href={`tel:${REHABIFY_PHONE.replace(/\s/g, '')}`} className="font-semibold underline">
+                {REHABIFY_PHONE}
+              </a>
+              . We&apos;ve told our care team. When a doctor says physiotherapy is safe, we&apos;ll help you book.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   // Sent: say what happens next
@@ -182,7 +244,7 @@ export function HelpMeChoose() {
       <div className="mt-8 flex max-w-3xl flex-col gap-4 rounded-3xl border border-rh-ink/10 bg-white p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
         <div>
           <p className="text-lg font-semibold text-rh-ink">Not sure who to choose?</p>
-          <p className="mt-1 text-sm text-rh-ink/70">Answer 3 quick questions and our care team will match you with the right physiotherapist.</p>
+          <p className="mt-1 text-sm text-rh-ink/70">Answer a few quick questions and our care team will match you with the right physiotherapist.</p>
         </div>
         <button
           type="button"
@@ -200,16 +262,91 @@ export function HelpMeChoose() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-xl font-semibold text-rh-ink">Help me choose a physiotherapist</p>
-          <p className="mt-1 text-sm text-rh-ink/70">Three quick questions. Our care team will use them to match you.</p>
+          <p className="mt-1 text-sm text-rh-ink/70">A few quick questions, the same ones Joy asks. Our care team will use them to match you.</p>
         </div>
         <button type="button" onClick={() => setOpen(false)} className="shrink-0 text-sm font-semibold text-rh-ink/60 hover:text-rh-ink">
           Close
         </button>
       </div>
 
-      {/* 1. What's wrong */}
+      {/* 1. Who it's for (and their name) */}
       <fieldset className="space-y-3">
-        <legend className={label}>1. What&apos;s wrong?</legend>
+        <legend className={label}>1. {isGuest ? 'What’s your name, and who' : 'Who'} is the physio session for?</legend>
+        {isGuest && (
+          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} autoComplete="name" placeholder="Your name" aria-label="Your name" className={field} />
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              { value: 'self', label: 'For myself' },
+              { value: 'other', label: 'For someone else' },
+            ] as const
+          ).map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={forWhom === option.value}
+              onClick={() => setForWhom(option.value)}
+              className={cn(
+                'h-12 rounded-2xl border text-sm font-semibold transition-colors',
+                forWhom === option.value ? 'border-rh-ink bg-rh-ink text-white' : 'border-rh-ink/15 bg-white text-rh-ink hover:border-rh-ink/40'
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        {forWhom === 'other' && (
+          <input
+            value={patientName}
+            onChange={(e) => setPatientName(e.target.value)}
+            maxLength={60}
+            placeholder="Their first name, e.g. Bola (optional)"
+            aria-label="Their first name"
+            className={field}
+          />
+        )}
+      </fieldset>
+
+      {/* 2. Age */}
+      <fieldset className="space-y-3">
+        <legend className={label}>2. {forWhom === 'other' ? 'How old are they?' : 'How old are you?'}</legend>
+        <input
+          value={age}
+          onChange={(e) => setAge(e.target.value.replace(/\D/g, '').slice(0, 3))}
+          inputMode="numeric"
+          placeholder="Age, e.g. 34"
+          aria-label="Age"
+          className={cn(field, 'sm:max-w-[12rem]')}
+        />
+      </fieldset>
+
+      {/* 3. City and country */}
+      <fieldset className="space-y-3">
+        <legend className={label}>3. {forWhom === 'other' ? 'Which city and country do they live in?' : 'Which city and country are you in?'}</legend>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <input
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+            maxLength={60}
+            autoComplete="address-level2"
+            placeholder="City or area, e.g. Ikeja, Lagos"
+            aria-label="City"
+            className={field}
+          />
+          <select value={country} onChange={(e) => setCountry(e.target.value)} aria-label="Country" className={field}>
+            {COUNTRIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+      </fieldset>
+
+      {/* 4. What's wrong */}
+      <fieldset className="space-y-3">
+        <legend className={label}>4. What&apos;s wrong?</legend>
         <div className="flex flex-wrap gap-2">
           {TOPICS.map((t) => (
             <button
@@ -236,71 +373,61 @@ export function HelpMeChoose() {
         />
       </fieldset>
 
-      {/* 2. Video or home visit */}
+      {/* 5. The red-flag check, as Joy asks it */}
       <fieldset className="space-y-3">
-        <legend className={label}>2. Video call or home visit?</legend>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {FORMATS.map(({ value, label: text, hint, icon: Icon }) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={format === value}
-              onClick={() => setFormat(value)}
-              className={cn(
-                'flex items-center gap-3 rounded-2xl border p-3.5 text-left transition-colors',
-                format === value ? 'border-rh-ink bg-rh-ink text-white' : 'border-rh-ink/15 bg-white text-rh-ink hover:border-rh-ink/40'
-              )}
-            >
-              {Icon && <Icon className="h-4 w-4 shrink-0" />}
-              <span>
-                <span className="block text-sm font-semibold">{text}</span>
-                <span className={cn('block text-xs', format === value ? 'text-white/70' : 'text-rh-ink/60')}>{hint}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-      </fieldset>
-
-      {/* 3. Where */}
-      <fieldset className="space-y-3">
-        <legend className={label}>3. Where are you?</legend>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <select value={state} onChange={(e) => setState(e.target.value)} aria-label="State" className={cn(field, !state && 'text-rh-ink/40')}>
-            <option value="">State</option>
-            {NIGERIAN_STATES.map((s) => (
-              <option key={s} value={s} className="text-rh-ink">
-                {s}
-              </option>
-            ))}
-          </select>
-          <input
-            value={area}
-            onChange={(e) => setArea(e.target.value)}
-            maxLength={80}
-            placeholder={format === 'home_visit' ? 'Area, e.g. Lekki or Wuse' : 'Area, e.g. Lekki (optional)'}
-            aria-label="Area"
-            className={field}
-          />
+        <legend className={label}>5. {forWhom === 'other' ? 'Do they have any of these right now?' : 'Do you have any of these right now?'}</legend>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {RED_FLAGS.map((flag) => {
+            const on = redFlags.includes(flag.id)
+            return (
+              <button
+                key={flag.id}
+                type="button"
+                role="checkbox"
+                aria-checked={on}
+                onClick={() => toggleFlag(flag.id)}
+                className={cn(
+                  'flex min-h-12 items-center gap-3 rounded-2xl border px-4 py-2.5 text-left text-sm transition-colors',
+                  on ? 'border-[#be123c] bg-rh-blush text-rh-ink' : 'border-rh-ink/15 bg-white text-rh-ink hover:border-rh-ink/40'
+                )}
+              >
+                <span aria-hidden className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-md border', on ? 'border-[#be123c] bg-[#be123c]' : 'border-rh-ink/25')}>
+                  {on && <CheckCircle2 className="h-3 w-3 text-white" />}
+                </span>
+                {flag.label}
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={noneOfThese}
+            onClick={() => {
+              setNoneOfThese(!noneOfThese)
+              if (!noneOfThese) setRedFlags([])
+            }}
+            className={cn(
+              'flex min-h-12 items-center gap-3 rounded-2xl border px-4 py-2.5 text-left text-sm font-semibold transition-colors sm:col-span-2',
+              noneOfThese ? 'border-rh-ink bg-rh-ink text-white' : 'border-rh-ink/15 bg-white text-rh-ink hover:border-rh-ink/40'
+            )}
+          >
+            None of these
+          </button>
         </div>
       </fieldset>
 
       {needPhone && (
         <fieldset className="space-y-3">
           <legend className={label}>How can we reach you?</legend>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {isGuest && (
-              <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} autoComplete="name" placeholder="Your name" aria-label="Your name" className={field} />
-            )}
-            <input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              inputMode="tel"
-              autoComplete="tel"
-              placeholder="WhatsApp number, e.g. 0801 234 5678"
-              aria-label="WhatsApp number"
-              className={field}
-            />
-          </div>
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            inputMode="tel"
+            autoComplete="tel"
+            placeholder="WhatsApp number, e.g. 0801 234 5678"
+            aria-label="WhatsApp number"
+            className={cn(field, 'sm:max-w-sm')}
+          />
           {isGuest && (
             <p className="text-xs text-rh-ink/60">
               Have an account?{' '}
