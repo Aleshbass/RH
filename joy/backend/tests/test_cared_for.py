@@ -28,9 +28,10 @@ def cared_rh(rh):
     return rh
 
 
-def _front(db_session, identity):
+def _front(db_session, identity, who="I'm not Simidara"):
+    """The hello, then consent: for a saved number, "I'm not Simidara" asks who it's for."""
     _turn(db_session, identity, STORY, "Hi")
-    _turn(db_session, identity, STORY, "1")
+    _turn(db_session, identity, STORY, who)
     return _turn(db_session, identity, STORY, "I agree")
 
 
@@ -44,8 +45,7 @@ def _sr(db_session, identity):
 
 
 def test_someone_else_never_wipes_the_saved_person(db_session, known_patient, cared_rh):  # noqa: F811
-    _front(db_session, known_patient)
-    who = _turn(db_session, known_patient, STORY, "No")
+    who = _front(db_session, known_patient)
     assert "Who would you like to book for?" in who.reply_text
     patient = db_session.get(Patient, known_patient.person_id)
     assert (patient.name, patient.age, patient.city) == ("Simidara", 25, "Ibadan")
@@ -56,7 +56,6 @@ def test_a_new_person_on_a_saved_number_goes_to_the_care_team(db_session, known_
     alerts = []
     monkeypatch.setattr("app.admin.escalation_router.route_escalation", lambda session, kind, payload: alerts.append(kind))
     _front(db_session, known_patient)
-    _turn(db_session, known_patient, STORY, "No")
     reply = _turn(db_session, known_patient, STORY, "new person")
     assert "care team" in reply.reply_text and alerts == ["callback"]
     assert db_session.get(Patient, known_patient.person_id).name == "Simidara"
@@ -64,15 +63,12 @@ def test_a_new_person_on_a_saved_number_goes_to_the_care_team(db_session, known_
 
 def test_booking_for_a_child_needs_a_guardian_and_makes_their_own_profile(db_session, known_patient, cared_rh):  # noqa: F811
     _front(db_session, known_patient)
-    _turn(db_session, known_patient, STORY, "No")
     assert "first name" in _turn(db_session, known_patient, STORY, "Someone I care for").reply_text
     _turn(db_session, known_patient, STORY, "Tobi")
     guardian = _turn(db_session, known_patient, STORY, "9")
     assert "parent or legal guardian" in guardian.reply_text
-    assert "first name" not in _turn(db_session, known_patient, STORY, "Yes").reply_text
-    _turn(db_session, known_patient, STORY, "Male")
+    assert "city and country" in _turn(db_session, known_patient, STORY, "Yes").reply_text
     _turn(db_session, known_patient, STORY, "same as me")
-    _turn(db_session, known_patient, STORY, "no preference")
     created = [data for op, data in cared_rh.calls if op == "patient_add_cared_for"]
     assert created and created[0]["first_name"] == "Tobi" and created[0]["age_years"] == 9
     assert created[0]["guardian_confirmed"] is True
@@ -85,7 +81,6 @@ def test_booking_for_a_child_needs_a_guardian_and_makes_their_own_profile(db_ses
 
 def test_a_non_guardian_cannot_book_a_child(db_session, known_patient, cared_rh):  # noqa: F811
     _front(db_session, known_patient)
-    _turn(db_session, known_patient, STORY, "No")
     _turn(db_session, known_patient, STORY, "Someone I care for")
     _turn(db_session, known_patient, STORY, "Tobi")
     _turn(db_session, known_patient, STORY, "9")
@@ -95,15 +90,17 @@ def test_a_non_guardian_cannot_book_a_child(db_session, known_patient, cared_rh)
 
 
 def test_it_is_for_my_mum_switches_to_booking_for_them(db_session, new_patient, cared_rh):  # noqa: F811
-    _front(db_session, new_patient)
-    reply = _turn(db_session, new_patient, STORY, "It's for my mum")
+    # The hello asks who it's for: their own name first, then the person they book for
+    asked = _front(db_session, new_patient, who="It's for my mum")
+    assert asked.reply_text == "What's your first name?"
+    reply = _turn(db_session, new_patient, STORY, "Bola")
     assert "What's their first name?" in reply.reply_text
     assert _sr(db_session, new_patient)["subject"]["relationship"] == "mum"
 
 
 def test_an_under_18_booking_for_themselves_needs_a_parent(db_session, new_patient, cared_rh):  # noqa: F811
-    _front(db_session, new_patient)
-    asked = _turn(db_session, new_patient, STORY, "Kemi, 15, Yaba Lagos")
+    _front(db_session, new_patient, who="Kemi, for myself")
+    asked = _turn(db_session, new_patient, STORY, "15, Yaba Lagos")
     assert "under 18" in asked.reply_text
     wait = _turn(db_session, new_patient, STORY, "Not now")
     assert "parent or guardian needs to agree" in wait.reply_text

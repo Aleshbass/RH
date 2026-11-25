@@ -60,9 +60,9 @@ def test_windows():
 
 
 def test_choosing_a_day_matches_that_day_only(db_session, new_patient, rh):
-    _through_intake(db_session, new_patient)
-    for answer in ("7", "Moderate", "no", "yes", "no"):
-        _turn(db_session, new_patient, STORY, answer)
+    # "When are you free?" is no longer asked up front; after cancelling the list it still is
+    _to_the_list(db_session, new_patient)
+    _turn(db_session, new_patient, STORY, "I want to cancel booking")
     days = _turn(db_session, new_patient, STORY, "Choose a day")
     assert days.reply_text.startswith("Which day suits you?")
     assert days.interactive["type"] == "list"
@@ -85,48 +85,44 @@ def known_patient(db_session) -> Identity:
 
 
 def test_a_known_name_is_confirmed_before_it_is_used(db_session, known_patient, rh):
-    _turn(db_session, known_patient, STORY, "Hi")
-    _turn(db_session, known_patient, STORY, "1")
-    confirm = _turn(db_session, known_patient, STORY, "I agree")
-    assert confirm.reply_text == "Am I speaking with Simidara? I have you down as Simidara, 25, in Bodija, Ibadan."
-    assert [b["reply"]["title"] for b in confirm.interactive["action"]["buttons"]] == ["Yes, that's me", "No, someone else"]
-    sex = _turn(db_session, known_patient, STORY, "Yes")
-    assert sex.reply_text == "Are you female or male?"
+    hello = _turn(db_session, known_patient, STORY, "Hi")
+    assert hello.reply_text.startswith("Hello Simidara 👋 I'm Joy, Rehabify's recovery assistant.")
+    assert [b["reply"]["title"] for b in hello.interactive["action"]["buttons"]] == ["For myself", "For someone else", "I'm not Simidara"]
+    consent = _turn(db_session, known_patient, STORY, "For myself")
+    assert consent.reply_text.startswith("Thanks, Simidara.\n\nBefore we continue")
+    # Age and place are known: straight to what's wrong
+    reason = _turn(db_session, known_patient, STORY, "I agree")
+    assert reason.reply_text.startswith("Thanks, Simidara. What would you like help with today?")
 
 
 def test_someone_else_on_the_phone_is_asked_who_it_is_for(db_session, known_patient, rh):
     # Nov 2026: the saved person is never wiped or overwritten (tests/test_cared_for.py)
     _turn(db_session, known_patient, STORY, "Hi")
-    _turn(db_session, known_patient, STORY, "1")
-    _turn(db_session, known_patient, STORY, "I agree")
-    who = _turn(db_session, known_patient, STORY, "No")
-    assert who.reply_text == "Thanks for letting me know.\n\nWho would you like to book for?"
+    consent = _turn(db_session, known_patient, STORY, "I'm not Simidara")
+    assert consent.reply_text.startswith("Thanks for letting me know.\n\nBefore we continue")
+    who = _turn(db_session, known_patient, STORY, "I agree")
+    assert who.reply_text == "Who would you like to book for?"
     patient = db_session.get(Patient, known_patient.person_id)
     assert (patient.name, patient.age, patient.city) == ("Simidara", 25, "Ibadan")
 
 
-def test_a_physio_preference_reaches_matching(db_session, new_patient, rh):
+def test_name_age_and_place_in_one_message_skip_their_questions(db_session, new_patient, rh):
     _turn(db_session, new_patient, STORY, "Hi")
-    _turn(db_session, new_patient, STORY, "1")
-    _turn(db_session, new_patient, STORY, "I agree")
-    _turn(db_session, new_patient, STORY, "Ada, 34, Yaba")
-    _turn(db_session, new_patient, STORY, "Female")
-    _turn(db_session, new_patient, STORY, "Female")
-    _turn(db_session, new_patient, STORY, "My lower back has been hurting for 3 weeks")
-    for answer in ("7", "Moderate", "no", "yes", "no", "this week"):
-        _turn(db_session, new_patient, STORY, answer)
-    call = [kwargs for op, kwargs in rh.calls if op == "match"][-1]
-    assert call["physio_sex"] == "female" and call["within_hours"] == 168
-    assert db_session.get(Patient, new_patient.person_id).gender == "female"
+    _turn(db_session, new_patient, STORY, "For myself")
+    name = _turn(db_session, new_patient, STORY, "I agree")
+    assert name.reply_text == "What's your first name?"
+    reason = _turn(db_session, new_patient, STORY, "Ada, 34, Yaba")
+    assert reason.reply_text.startswith("Thanks, Ada. What would you like help with today?")
+    patient = db_session.get(Patient, new_patient.person_id)
+    assert (patient.name, patient.age, patient.city) == ("Ada", 34, "Lagos")
 
 
 # ---- requests at any step ------------------------------------------------------------------------
 
 def _to_the_list(db_session, identity):
     _through_intake(db_session, identity)
-    for answer in ("7", "Moderate", "no", "yes", "no"):
-        _turn(db_session, identity, STORY, answer)
-    return _turn(db_session, identity, STORY, "today or tomorrow")
+    # The red-flag screen goes straight to the soonest physios (owner, 25 Nov 2026)
+    return _turn(db_session, identity, STORY, "7")
 
 
 def _conversation(db_session, identity) -> Conversation:

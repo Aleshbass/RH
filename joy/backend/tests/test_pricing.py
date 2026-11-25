@@ -157,12 +157,12 @@ def test_the_landing_question_is_answered_then_the_welcome(db_session, rh, new_p
 
     result = handle_turn(db_session, new_patient.phone_e164, LANDING, FakeLLM())
     assert result.before[0]["text"].startswith("Chatting with me is free.")
-    assert result.reply_text.startswith("Hi 👋 I'm Joy, Rehabify's recovery companion.")
-    assert result.interactive["type"] == "list"
+    assert result.reply_text.startswith("Hello 👋 I'm Joy, Rehabify's recovery assistant.")
+    assert result.interactive["type"] == "button"
     conversation, messages = _messages(db_session, new_patient)
     assert messages[0] == ("user", LANDING)
     assert messages[1][0] == "joy" and messages[1][1].startswith("Chatting with me is free.")
-    assert messages[2][1].startswith("Hi 👋 I'm Joy")
+    assert messages[2][1].startswith("Hello 👋 I'm Joy")
     # A price question is not their story
     assert "opening_story" not in (conversation.booking_context or {}).get("self_referral", {})
 
@@ -172,7 +172,7 @@ def test_a_price_question_mid_step_is_answered_and_the_step_asked_again(db_sessi
 
     phone = new_patient.phone_e164
     handle_turn(db_session, phone, "Hi", FakeLLM())
-    consent = handle_turn(db_session, phone, "1", FakeLLM())
+    consent = handle_turn(db_session, phone, "For myself", FakeLLM())
     asked = handle_turn(db_session, phone, "how much is a home visit?", FakeLLM())
     assert "travel charge for your area" in asked.before[0]["text"]
     assert asked.reply_text == consent.reply_text
@@ -192,7 +192,7 @@ def test_a_story_with_a_price_question_keeps_the_story(db_session, rh, new_patie
     text = "My knee hurts when I climb stairs, how much will it cost?"
     result = handle_turn(db_session, new_patient.phone_e164, text, FakeLLM())
     assert result.before[0]["text"].startswith("Chatting with me is free.")
-    assert result.reply_text.startswith("Hi 👋 I'm Joy")
+    assert result.reply_text.startswith("Hello 👋 I'm Joy")
     conversation, messages = _messages(db_session, new_patient)
     assert conversation.booking_context["self_referral"]["opening_story"] == text
     assert messages[0] == ("user", text)

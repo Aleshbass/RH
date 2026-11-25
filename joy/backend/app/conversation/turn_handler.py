@@ -2643,10 +2643,11 @@ def _self_referral_turn(
         result = sr.triage_turn(session, patient, conversation, state.extracted, user_text)
     elif step == sr.BOOKING and not conversation.booking_substate:
         # Matching couldn't run last time (Rehabify unreachable): try again
+        retry_urgent = (context.get(sr.SR_KEY) or {}).get("outcome") == "urgent"
+        retry_window = (context.get(sr.SR_KEY) or {}).get("window")
         result = sr.Step(
-            "outcome", extracted=state.extracted,
-            urgent=(context.get(sr.SR_KEY) or {}).get("outcome") == "urgent", stage="matching",
-            window=(context.get(sr.SR_KEY) or {}).get("window"),
+            "outcome", extracted=state.extracted, urgent=retry_urgent, stage="matching", window=retry_window,
+            outcome_said=bool(retry_window and not retry_urgent),
         )
     else:
         return None
@@ -2683,8 +2684,8 @@ def _self_referral_turn(
         )
     if result.kind == "outcome":
         _set_triage_status(session, state, "summarised")
-        # A routine outcome was already said with "When are you free?"; urgent goes straight to times
-        intro = "" if (result.window and not result.urgent) else sr.outcome_text(result.urgent)
+        # The outcome ("not a diagnosis") comes with the physios, unless it was already said
+        intro = "" if result.outcome_said else sr.outcome_text(result.urgent)
         reply, before = offer_named_physios(
             session, conversation, patient, extracted, urgent=result.urgent,
             language=patient.preferred_language or language, intro=intro, window=result.window,

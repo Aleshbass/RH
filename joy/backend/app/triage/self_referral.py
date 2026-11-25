@@ -3,10 +3,15 @@
 For a patient with no physiotherapist, Joy runs a structured triage-and-matching flow. It never
 names a condition, plans treatment or suggests exercises before a physio has assessed them.
 
-    welcome + safety boundary -> language -> consent -> first name, age, area
-    -> what's wrong (free text or voice, read by the model) -> affected area if unclear
-    -> the 7-item red-flag screen -> up to 5 tap-to-answer questions
-    -> outcome (never a diagnosis) -> 3 named physios with photos (app/booking/booking_flow.py)
+    hello: their name, and for themselves or someone else (owner, 25 Nov 2026) -> consent (one tap)
+    -> age -> city and country -> what's wrong (free text or voice, read by the model)
+    -> affected area if unclear -> the 7-item red-flag screen
+    -> outcome (never a diagnosis) -> 3 named physios free soonest (app/booking/booking_flow.py)
+
+The language is taken from how they write (no menu). Sex, a female/male physio preference, the
+follow-up questions and "When are you free?" are no longer asked (owner, 25 Nov 2026: "keep it to
+age, city and country, their complaint and the red-flag screen, then match"); their handlers stay
+for conversations already part-way through them.
 
 Rules:
 - Code owns every step. The model only reads the patient's own story.
@@ -47,7 +52,8 @@ logger = logging.getLogger(__name__)
 FLOW_KEY = "triage_flow_state"  # the same key app/conversation/turn_handler.py uses
 SR_KEY = "self_referral"
 
-LANGUAGE = "sr_language"
+LANGUAGE = "sr_language"  # the old first step; conversations already on it still work
+INTRO = "sr_intro"
 CONSENT = "sr_consent"
 PROFILE = "sr_profile"
 REASON = "sr_reason"
@@ -57,7 +63,7 @@ QUESTIONS = "sr_questions"
 TIMING = "sr_timing"
 CARE_TEAM = "sr_care_team"
 BOOKING = "sr_booking"
-FRONT_STEPS = (LANGUAGE, CONSENT, PROFILE)
+FRONT_STEPS = (LANGUAGE, INTRO, CONSENT, PROFILE)
 STEPS = (*FRONT_STEPS, REASON, AREA, RED_FLAGS, QUESTIONS, TIMING, CARE_TEAM, BOOKING)
 
 PRIVACY_URL = "https://physioaroundme.com/privacy-policy"
@@ -91,6 +97,8 @@ class Step:
     stage: str | None = None  # "safety_screen" | "matching" | "summary"
     # The time window to match in (app/triage/timing.py Window.as_dict()), for an "outcome"
     window: dict | None = None
+    # The outcome ("not a diagnosis") was already sent with an earlier message
+    outcome_said: bool = False
 
 
 def _buttons(*options: tuple[str, str]) -> dict:
@@ -137,7 +145,7 @@ def step_interactive(conversation: Conversation | None) -> dict | None:
         return _list("Choose language", list(LANGUAGE_ROWS), "Language")
     if step == CONSENT:
         return _buttons(("I agree", "I agree"), ("I don't agree", "I don't agree"))
-    if step in (AREA, RED_FLAGS, QUESTIONS, TIMING):
+    if step in (INTRO, AREA, RED_FLAGS, QUESTIONS, TIMING):
         menu = (context.get(SR_KEY) or {}).get("menu")
         return menu if isinstance(menu, dict) else None
     return None
@@ -218,6 +226,64 @@ def parse_consent(text: str) -> bool | None:
         return True
     return None
 
+SAFETY_BOUNDARY = f"I don't give a diagnosis or emergency care. In an emergency, {CALL_REHABIFY} or go to the nearest hospital."
+
+
+def _intro(patient: Patient, sr: dict) -> tuple[str, dict]:
+    """The first message: hello, their name, and who the physio session is for (owner, 25 Nov 2026)."""
+    first = _first_name(patient) if sr.get("known_name") else ""
+    if first:
+        # Known from an earlier record: "I'm not Simidara" in case someone else has the phone
+        return (
+            f"Hello {first} 👋 I'm Joy, Rehabify's recovery assistant.\n\n"
+            f"Would you like to book a physio session for yourself or for someone else?\n\n{SAFETY_BOUNDARY}",
+            _buttons(("for myself", "For myself"), ("someone else", "For someone else"), ("not me", f"I'm not {first}"[:20])),
+        )
+    return (
+        "Hello 👋 I'm Joy, Rehabify's recovery assistant. What's your name?\n\n"
+        f"And would you like to book a physio session for yourself or for someone else?\n\n{SAFETY_BOUNDARY}",
+        _buttons(("for myself", "For myself"), ("someone else", "For someone else")),
+    )
+
+
+_OTHER_WORDS = ("someone else", "someone i care for", "for someone", "for my ", "for a friend", "for a relative", "on behalf",
+                "my child", "my mum", "my mom", "my mother", "my dad", "my father", "my son", "my daughter", "my wife", "my husband")
+_SELF_RE = re.compile(r"\b(?:myself|my self|for me|me)\b")
+_WHO_PHRASES_RE = re.compile(
+    r"\b(?:i'?m |i am |it'?s |its )?(?:booking |book )?(?:a session )?(?:for )?(?:myself|my self|me|someone else|someone i care for|"
+    r"a friend|a relative)\b|\b(?:hi|hello|hey|good (?:morning|afternoon|evening)|joy)\b",
+    re.I,
+)
+
+
+def intro_answer(text: str, *, known: bool) -> tuple[str | None, str | None, str | None]:
+    """(who, name, relationship) from the answer to the hello. who: self | other | not_me | None.
+    The name only for a new number ("Ada, for myself", "I'm Tunde, it's for my mum")."""
+    plain = _norm(text)
+    other = _FOR_OTHER_RE.search(text or "")
+    who = None
+    if known and (plain == "not me" or plain.startswith(("i'm not", "im not", "i am not", "this is not", "it's not", "its not"))
+                  or plain in _NO_WORDS):
+        who = "not_me"
+    elif other or any(word in plain for word in _OTHER_WORDS):
+        who = "other"
+    elif _SELF_RE.search(plain) or (known and (plain in _YES_WORDS or plain.startswith("yes"))):
+        who = "self"
+    name = None
+    if not known:
+        match = _NAME_RE.search(text or "")
+        name = _tidy_name(match.group(1)) if match else None
+        if not name:
+            rest = other and (text or "").replace(other.group(0), " ") or (text or "")
+            rest = _WHO_PHRASES_RE.sub(" ", rest)
+            for part in re.split(r"[,;.!\n]|\band\b", rest):
+                found = _just_the_name(part)
+                if found:
+                    name = found["name"]
+                    break
+    return who, name, (other.group(1).lower() if other else None)
+
+
 PROFILE_TEXT = (
     "Thank you. Let's get started.\n\n"
     "1. What is your first name?\n"
@@ -259,7 +325,31 @@ _FILLER_RE = re.compile(r"(?:and|i|i am|i'm|im|i live|my|years? old|old|yrs|year
 _NOT_A_NAME = {
     "yes", "no", "ok", "okay", "hi", "hello", "lagos", "abuja", "male", "female", "sir", "ma", "thanks",
     "in", "at", "from", "the", "a", "an", "here", "fine", "good", "not", "very", "so", "and", "pain", "my",
+    "it's", "its", "it", "this", "that", "please", "pls", "book", "booking", "session", "physio", "help", "need",
+    "want", "is", "are", "we", "you", "they", "for", "me", "myself", "someone", "joy", "hey", "morning", "evening",
 }
+
+
+_COUNTRIES = {
+    "nigeria": "Nigeria", "naija": "Nigeria", "ghana": "Ghana", "kenya": "Kenya", "south africa": "South Africa",
+    "cameroon": "Cameroon", "benin republic": "Benin", "togo": "Togo", "sierra leone": "Sierra Leone", "liberia": "Liberia",
+    "united kingdom": "United Kingdom", "uk": "United Kingdom", "u.k": "United Kingdom", "england": "United Kingdom",
+    "scotland": "United Kingdom", "wales": "United Kingdom", "ireland": "Ireland", "united states": "United States",
+    "usa": "United States", "u.s.a": "United States", "america": "United States", "canada": "Canada",
+    "germany": "Germany", "netherlands": "Netherlands", "france": "France", "uae": "United Arab Emirates",
+    "united arab emirates": "United Arab Emirates", "dubai": "United Arab Emirates", "saudi arabia": "Saudi Arabia",
+    "qatar": "Qatar", "australia": "Australia",
+}
+
+
+def country_in(text: str) -> tuple[str | None, str]:
+    """(the country named, the text without it): "Yaba, Lagos, Nigeria" -> ("Nigeria", "Yaba, Lagos, ")."""
+    raw = text or ""
+    for key in sorted(_COUNTRIES, key=len, reverse=True):
+        match = re.search(rf"(?<![A-Za-z]){re.escape(key)}(?![A-Za-z])", raw, flags=re.I)
+        if match:
+            return _COUNTRIES[key], f"{raw[:match.start()]} {raw[match.end():]}".strip(" ,")
+    return None, raw
 
 
 def parse_language(text: str) -> str | None:
@@ -316,11 +406,17 @@ def _age_in(text: str) -> tuple[int, re.Match] | None:
 
 
 def parse_profile(text: str, missing: list[str]) -> dict[str, Any]:
-    """first_name / age / place from one reply. With one field missing, the whole reply answers it."""
+    """first_name / age / place from one reply. With one field missing, the whole reply answers it.
+    A country, when named, comes back as "country" and is left out of the place."""
     raw = " ".join((text or "").split())
-    found: dict[str, Any] = {}
     if not raw:
+        return {}
+    country, without = country_in(raw)
+    if country:
+        found = parse_profile(without, missing) if without.strip(" ,.") else {}
+        found["country"] = country
         return found
+    found: dict[str, Any] = {}
     if missing == ["name"]:
         match = _NAME_RE.search(raw)
         name = _tidy_name(match.group(1) if match else raw.split()[0])
@@ -426,10 +522,11 @@ def profile_missing(patient: Patient, sr: dict | None = None) -> list[str]:
     preference for a female or male physiotherapist last.
     """
     missing = []
-    if sr is not None and sr.get("known_name") and not sr.get("identity_confirmed"):
-        missing.append("confirm")
     if sr is not None and sr.get("who_pending"):
-        return [*missing, "who"]
+        return ["who"]
+    # Their own name first, also when they book for someone else (owner, 25 Nov 2026)
+    if not (patient.name or "").strip() and not (sr or {}).get("name_skipped"):
+        missing.append("name")
     if sr is not None and sr.get("for_other"):
         subject = _subject(sr)
         if not subject.get("name"):
@@ -438,27 +535,17 @@ def profile_missing(patient: Patient, sr: dict | None = None) -> list[str]:
             missing.append("s_age")
         elif subject["age"] < ADULT_AGE and not subject.get("guardian_confirmed"):
             missing.append("guardian")
-        if subject.get("sex") not in _SEXES and not subject.get("sex_skipped"):
-            missing.append("s_sex")
         if not (subject.get("city") or subject.get("area") or subject.get("place_same")):
             missing.append("s_place")
-        if "physio_pref" not in sr:
-            missing.append("physio_pref")
         return missing
-    if not (patient.name or "").strip():
-        missing.append("name")
     if patient.age is None and patient.date_of_birth is None:
         missing.append("age")
     elif sr is not None and isinstance(patient.age, int) and patient.age < ADULT_AGE:
         guardian = sr.get("guardian") or {}
         if not guardian.get("confirmed_at"):
             missing.append("guardian_name" if guardian.get("pending_name") else "guardian")
-    if (patient.gender or "") not in _SEXES and not (sr or {}).get("sex_skipped"):
-        missing.append("sex")
     if not (patient.area or patient.city or patient.location):
         missing.append("place")
-    if sr is not None and "physio_pref" not in sr:
-        missing.append("physio_pref")
     return missing
 
 
@@ -470,13 +557,13 @@ _ASK_MISSING = {
     "name": "What's your first name?",
     "age": "How old are you? A number is fine. If you're asking for a child, tell me their age.",
     "sex": "Are you female or male?",
-    "place": "Which state and area are you in? For example, *Bodija, Ibadan*. You can also tap *Send location*.",
+    "place": "Which city and country are you in? For example, *Ikeja, Lagos, Nigeria*. You can also tap *Send location*.",
     "physio_pref": "Would you prefer a female or male physiotherapist?",
     "who": "Who would you like to book for?",
     "s_name": "Of course. What's their first name?",
     "s_age": "How old are they? A number is fine.",
     "s_sex": "Are they female or male?",
-    "s_place": "Which state and area do they live in? For example, *Bodija, Ibadan*.",
+    "s_place": "Which city and country do they live in? For example, *Ikeja, Lagos, Nigeria*.",
     "guardian_name": "Thank you. What's your name (the parent or guardian)?",
 }
 _YES_WORDS = {"yes", "yeah", "yep", "y", "yes that's me", "that's me", "it's me", "its me", "correct", "right",
@@ -561,8 +648,8 @@ def _keep_story(sr: dict, text: str) -> None:
 
 def needs_front(patient: Patient, sr: dict | None = None) -> list[str]:
     steps = []
-    if not patient.preferred_language:
-        steps.append(LANGUAGE)
+    if not (sr or {}).get("intro_done"):
+        steps.append(INTRO)
     if patient.care_consent_at is None:
         steps.append(CONSENT)
     missing = profile_missing(patient, sr if sr is not None else {})
@@ -598,8 +685,8 @@ def _record_consent(session: Session, patient: Patient, conversation: Conversati
         logger.warning("joy_care_consent_not_recorded", exc_info=True)
 
 
-def _sync_profile(session: Session, patient: Patient) -> None:
-    """First name, age, sex and place on the Rehabify record. Never raises."""
+def _sync_profile(session: Session, patient: Patient, *, country: str | None = None) -> None:
+    """First name, age, sex, place and country on the Rehabify record. Never raises."""
     try:
         from app.booking.booking_flow import _rh_patient_id
         from app.integrations.rh_client import RHActor, configured_rh_client
@@ -612,6 +699,7 @@ def _sync_profile(session: Session, patient: Patient) -> None:
             "state": getattr(patient, "state", None), "city": patient.city, "area": patient.area,
             "age_years": patient.age if isinstance(patient.age, int) and 0 < patient.age < 120 else None,
             "gender": patient.gender if patient.gender in ("female", "male") else None,
+            "country": country,
         }.items() if v}
         configured_rh_client().operational_mutation(
             "patient_update_profile",
@@ -702,6 +790,11 @@ def _next_front(session: Session, patient: Patient, conversation: Conversation, 
     """Ask the next front step, or move on to the story once they're all done."""
     steps = needs_front(patient, sr)
     lead = f"{prefix}\n\n" if prefix else ""
+    if INTRO in steps:
+        text, menu = _intro(patient, sr)
+        sr["menu"] = menu
+        _save(conversation, context, sr, INTRO)
+        return Step("reply", lead + text, menu)
     if CONSENT in steps:
         _save(conversation, context, sr, CONSENT)
         return Step("reply", lead + CONSENT_TEXT, _buttons(("I agree", "I agree"), ("I don't agree", "I don't agree")))
@@ -719,8 +812,10 @@ def _next_front(session: Session, patient: Patient, conversation: Conversation, 
         _save(conversation, context, sr, None)
         return Step("story", story=story)
     _save(conversation, context, sr, REASON)
+    if prefix:
+        return Step("reply", f"{lead}{REASON_TEXT}")
     name = _first_name(patient)
-    return Step("reply", f"{lead}Thanks{', ' + name if name else ''}. {REASON_TEXT}")
+    return Step("reply", f"Thanks{', ' + name if name else ''}. {REASON_TEXT}")
 
 
 def start(session: Session, patient: Patient, conversation: Conversation, user_text: str, *, is_greeting: bool) -> Step | None:
@@ -735,15 +830,7 @@ def start(session: Session, patient: Patient, conversation: Conversation, user_t
         _keep_story(sr, user_text)
     append(session, kind=AuditKind.TRIAGE, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"event": "self_referral_started", "conversation_id": str(conversation.id)})
-    if LANGUAGE in needs_front(patient, sr):
-        _save(conversation, context, sr, LANGUAGE)
-        return Step("reply", WELCOME, _list("Choose language", list(LANGUAGE_ROWS), "Language"))
-    if not needs_front(patient, sr) and not sr.get("opening_story"):
-        # Language, consent and profile are already known: straight to what's wrong
-        name = _first_name(patient)
-        _save(conversation, context, sr, REASON)
-        return Step("reply", f"Hi{' ' + name if name else ''} 👋 I'm Joy. I don't give a diagnosis or emergency care "
-                             f"(in an emergency, {CALL_REHABIFY}).\n\n{REASON_TEXT}")
+    # Always the hello: their name, and who the session is for (owner, 25 Nov 2026)
     return _next_front(session, patient, conversation, context, sr)
 
 
@@ -793,6 +880,58 @@ def front_turn(
         sr["language"] = language
         step_result = _next_front(session, patient, conversation, context, sr)
         step_result.language = language
+        return step_result
+
+    if step == INTRO:
+        known = bool(sr.get("known_name"))
+        who, name, relationship = intro_answer(user_text, known=known)
+        if name and not (patient.name or "").strip():
+            patient.name = name
+        if not patient.preferred_language:
+            # No language menu: the language they write in
+            patient.preferred_language = detected_language or "en"
+            sr["language"] = patient.preferred_language
+        prefix = ""
+        if who == "not_me":
+            # Someone else has the phone: never overwrite the saved person (tests/test_cared_for.py)
+            sr["identity_confirmed"] = True
+            sr["who_pending"] = True
+            prefix = "Thanks for letting me know."
+        elif who == "other":
+            sr["for_other"] = True
+            sr["identity_confirmed"] = True
+            subject = _subject(sr)
+            if relationship:
+                subject["relationship"] = relationship
+            sr["subject"] = subject
+            sr.pop("who_pending", None)
+        elif who == "self":
+            sr["identity_confirmed"] = True
+            sr["for_self"] = True
+        if who is None:
+            story = _looks_like_story(user_text)
+            if story:
+                _keep_story(sr, user_text)
+            tries = int(sr.get("intro_attempts") or 0) + 1
+            sr["intro_attempts"] = tries
+            if tries < 2:
+                first = _first_name(patient)
+                lead = "Thanks, I've noted that. " if story else (f"Thanks, {first}. " if name and first else "")
+                menu = sr.get("menu") or _intro(patient, sr)[1]
+                sr["menu"] = menu
+                _save(conversation, context, sr, INTRO)
+                return Step("reply", f"{lead}Is this booking for you or for someone else?", menu, language=patient.preferred_language)
+            # Never trap anyone: carry on as booking for themselves
+            sr["identity_confirmed"] = True
+            sr["for_self"] = True
+        sr["intro_done"] = True
+        sr.pop("menu", None)
+        first = _first_name(patient)
+        if not prefix and first:
+            prefix = f"Thanks, {first}."
+        session.flush()
+        step_result = _next_front(session, patient, conversation, context, sr, prefix=prefix)
+        step_result.language = patient.preferred_language
         return step_result
 
     if step == CONSENT:
@@ -928,6 +1067,9 @@ def front_turn(
                 subject["age"] = int(found["age"])
             if (found.get("city") or found.get("area")) and "s_place" in missing:
                 subject["city"], subject["area"] = found.get("city"), found.get("area")
+            if found.get("country") and field == "s_place":
+                subject["country"] = found["country"]
+                got = got or bool(found.get("city") or found.get("area")) or found["country"] != "Nigeria"
             sr["subject"] = subject
             got = got or field[2:] in found or (field == "s_place" and bool(found.get("city") or found.get("area")))
         if field in ("name", "age", "place") and not pinned:
@@ -947,6 +1089,12 @@ def front_turn(
                 patient.age = int(found["age"])
             if (found.get("city") or found.get("area")) and "place" in missing:
                 _apply_place(patient, found.get("city"), found.get("area"))
+            if found.get("country") and field == "place":
+                sr["country"] = found["country"]
+                if not (found.get("city") or found.get("area")) and found["country"] != "Nigeria":
+                    # Only a country outside Nigeria ("UK"): enough for an online session
+                    _apply_place(patient, None, found["country"])
+                    found["area"] = found["country"]
             got = got or field in found or (field == "place" and bool(found.get("city") or found.get("area")))
         if not got and _looks_like_story(user_text) and field in ("confirm", "name"):
             _keep_story(sr, user_text)
@@ -954,7 +1102,9 @@ def front_turn(
         if not got and field is not None:
             tries = int(sr.get(f"{field}_attempts") or 0) + 1
             sr[f"{field}_attempts"] = tries
-            if field == "sex" and tries >= 2:
+            if field == "name" and tries >= 2:
+                sr["name_skipped"] = True  # never trap anyone: the physio can ask
+            elif field == "sex" and tries >= 2:
                 sr["sex_skipped"] = True  # never trap anyone: the physio can ask
             elif field == "physio_pref" and tries >= 2:
                 sr["physio_pref"] = "none"
@@ -986,7 +1136,7 @@ def front_turn(
                 # Their own managed profile on Rehabify; the phone owner's record is left alone
                 ensure_subject_record(session, patient, conversation, sr=sr)
             else:
-                _sync_profile(session, patient)
+                _sync_profile(session, patient, country=sr.get("country"))
         return _next_front(session, patient, conversation, context, sr, prefix=prefix)
 
     return None
@@ -1340,13 +1490,12 @@ def _outcome(patient: Patient, conversation: Conversation, context: dict, sr: di
     urgent = (safety.risk_level or "").upper() == "AMBER" or safety.action == "specialist_review" or sr.get("answers", {}).get("pain") == "severe"
     sr["outcome"] = "urgent" if urgent else "routine"
     sr["outcome_rules"] = list(safety.rule_ids)
-    if urgent:
-        # Urgent patients see only physios free today or tomorrow (spec, matching protocol 5)
-        window = timing.soon_window()
-        sr["window"] = window.as_dict()
-        _save(conversation, context, sr, BOOKING)
-        return Step("outcome", extracted=extracted, urgent=True, stage="matching", window=window.as_dict())
-    return _timing_step(conversation, context, sr, before=[{"text": outcome_text(False)}], extracted=extracted)
+    # The physios free soonest, today or tomorrow (no "When are you free?" any more: owner, 25 Nov
+    # 2026). Nobody free: another day is offered, then the care team (booking_flow).
+    window = timing.soon_window()
+    sr["window"] = window.as_dict()
+    _save(conversation, context, sr, BOOKING)
+    return Step("outcome", extracted=extracted, urgent=urgent, stage="matching", window=window.as_dict())
 
 
 def _timing_step(conversation: Conversation, context: dict, sr: dict, *, lead: str = "", before: list[dict] | None = None,
@@ -1379,7 +1528,7 @@ def timing_turn(conversation: Conversation, context: dict, sr: dict, user_text: 
     sr.pop("timing_days", None)
     sr.pop("menu", None)
     _save(conversation, context, sr, BOOKING)
-    return Step("outcome", extracted=extracted, urgent=False, stage="matching", window=window.as_dict())
+    return Step("outcome", extracted=extracted, urgent=False, stage="matching", window=window.as_dict(), outcome_said=True)
 
 
 def outcome_text(urgent: bool) -> str:
@@ -1434,12 +1583,8 @@ def triage_turn(
             sr["red_flags"] = []
             sr["red_flag_screen"] = "negative"
             extracted = clear_protocol_screen(extracted)
-            questions = condition_questions(extracted)
-            if not questions:
-                return _with_extracted(_outcome(patient, conversation, context, sr, extracted), extracted)
-            area = (extracted.body_location or extracted.body_region or "").strip()
-            lead = f"Thanks. A few quick questions about your {area}:\n\n" if area else "Thanks. A few quick questions:\n\n"
-            return _with_extracted(_question_step(conversation, context, sr, questions, 0, lead=lead), extracted)
+            # No follow-up questions any more: straight to matching (owner, 25 Nov 2026)
+            return _with_extracted(_outcome(patient, conversation, context, sr, extracted), extracted)
         text, menu = red_flag_prompt(extracted, None)
         ask = ("Which one? Reply with the number(s) that apply, for example *2*, or 7 if none of them."
                if verdict == "which" else
