@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery } from 'convex/react'
-import type { FunctionReturnType } from 'convex/server'
+import { makeFunctionReference, type FunctionReturnType } from 'convex/server'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
 import {
@@ -69,6 +69,14 @@ import { cn } from '@/lib/utils'
 
 const careApi = (api as unknown as Record<string, Record<string, unknown>>).physioCare
 
+// The care team (clinicTools.addToCareTeam & co.): plain references, as the api type is at TS's depth limit
+type CareTeamArgs = { patientId: Id<'users'>; clinicianId: Id<'users'> }
+const addToCareTeamRef = makeFunctionReference<'mutation', CareTeamArgs, { success: boolean }>('clinicTools:addToCareTeam')
+const removeFromCareTeamRef = makeFunctionReference<'mutation', CareTeamArgs, { success: boolean; upcomingVisits: number }>(
+  'clinicTools:removeFromCareTeam'
+)
+const setCareTeamLeadRef = makeFunctionReference<'mutation', CareTeamArgs, { success: boolean }>('clinicTools:setCareTeamLead')
+
 type PatientRecord = NonNullable<FunctionReturnType<typeof api.clinicTools.getClinicPatientFullRecord>>
 
 const CLINIC = '/dashboard/clinic'
@@ -130,9 +138,9 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
   const reopenCare = useMutation(api.clinicTools.reopenPatientCare)
   const reassignPatient = useMutation(api.patients.reassignPatient)
   // More than one clinician can look after a patient (clinic feedback, 24 Nov 2026)
-  const addToCareTeam = useMutation(api.clinicTools.addToCareTeam)
-  const removeFromCareTeam = useMutation(api.clinicTools.removeFromCareTeam)
-  const setCareTeamLead = useMutation(api.clinicTools.setCareTeamLead)
+  const addToCareTeam = useMutation(addToCareTeamRef)
+  const removeFromCareTeam = useMutation(removeFromCareTeamRef)
+  const setCareTeamLead = useMutation(setCareTeamLeadRef)
   const resendInvite = useMutation(api.clinicTools.resendClinicPatientInvite)
 
   const initialTab = searchParams.get('tab') as TabId | null

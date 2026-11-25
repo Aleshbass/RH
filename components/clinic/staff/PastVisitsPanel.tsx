@@ -9,15 +9,19 @@
 
 import { useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
+import { makeFunctionReference } from 'convex/server'
 import { toast } from 'sonner'
 import { Check, Loader2 } from '@/components/icons'
-import { api } from '@/convex/_generated/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { Panel } from '@/components/clinic/ui'
 import { cn } from '@/lib/utils'
 import { playSound } from '@/lib/sounds'
 import { teamError } from './team-shared'
+
+// Plain references: the generated api type is at TypeScript's depth limit
+const ruleRef = makeFunctionReference<'query', Record<string, never>, { days: number; canChange: boolean } | null>('clinicTools:getPastVisitRule')
+const setRuleRef = makeFunctionReference<'mutation', { days: number }, { days: number }>('clinicTools:setPastVisitRule')
 
 const CHOICES: { days: number; label: string; hint: string }[] = [
   { days: 365, label: 'Up to a year back', hint: 'Any visit they forgot to book' },
@@ -28,8 +32,8 @@ const CHOICES: { days: number; label: string; hint: string }[] = [
 
 export default function PastVisitsPanel() {
   const { requireFullAccess } = useClinicAccess()
-  const rule = useQuery(api.clinicTools.getPastVisitRule, {})
-  const setRule = useMutation(api.clinicTools.setPastVisitRule)
+  const rule = useQuery(ruleRef, {})
+  const setRule = useMutation(setRuleRef)
   const [saving, setSaving] = useState<number | null>(null)
 
   const choose = async (days: number) => {
