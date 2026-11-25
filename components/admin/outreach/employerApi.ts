@@ -185,6 +185,10 @@ export type SequencesData = {
     rampPerDay: number
     dailyMax: number
     next: SendingDay
+    /** When emails go out (Clinic outreach › Sender), Lagos time */
+    windowStart: number
+    windowEnd: number
+    sendDays: number[]
   }
   employerSentToday: number
   /** Headline numbers for employer sequences (outreachSend.ts outreachNumbers) */

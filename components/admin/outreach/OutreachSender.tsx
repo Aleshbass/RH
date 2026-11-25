@@ -39,10 +39,29 @@ import {
   DailyLimitTip,
   OutreachNumbersTiles,
   REPLIES_INFO,
+  clockLabel,
   inboxLabel,
+  sendingHoursLabel,
   type OutreachNumbers,
   type SendingDay,
 } from "./OutreachHelp";
+
+/** Sending days, Monday first (0 = Sunday, as the server stores them) */
+const WEEK = [
+  { day: 1, label: "Mon" },
+  { day: 2, label: "Tue" },
+  { day: 3, label: "Wed" },
+  { day: 4, label: "Thu" },
+  { day: 5, label: "Fri" },
+  { day: 6, label: "Sat" },
+  { day: 0, label: "Sun" },
+];
+/** "09:30" ⇄ minutes after midnight, for the time inputs */
+const toTimeInput = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+const fromTimeInput = (value: string) => {
+  const [h, m] = value.split(":").map(Number);
+  return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : NaN;
+};
 
 type Step = { subject: string; body: string; waitDays: number };
 type SeqStatus = "draft" | "active" | "paused";
@@ -69,6 +88,10 @@ type Overview = {
     rampPerDay: number;
     dailyMax: number;
     rampStartedOn?: string;
+    /** When emails go out, Lagos time: minutes after midnight, and the days (0 = Sunday) */
+    windowStart: number;
+    windowEnd: number;
+    sendDays: number[];
     lastSendError: string | null;
     lastSendErrorAt: number | null;
   };
@@ -135,6 +158,9 @@ const saveSenderRef = makeFunctionReference<
     dailyStart: number;
     rampPerDay: number;
     dailyMax: number;
+    windowStart: number;
+    windowEnd: number;
+    sendDays: number[];
   }>,
   null
 >("outreachSend:adminSaveSender");
@@ -335,7 +361,7 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
         title="Sending"
         description={
           data.connection.configured
-            ? `From ${s.fromName} <${data.connection.address}>, one email at a time, weekdays 9:00–17:00 Lagos time.`
+            ? `From ${s.fromName} <${data.connection.address}>, one email at a time, ${sendingHoursLabel(s)}.`
             : "Connect the inbox first: add OUTREACH_SMTP_USER and OUTREACH_SMTP_PASS on Convex."
         }
         actions={
@@ -375,12 +401,13 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
                 ramp={s}
                 sendingOn={s.sendingOn}
                 audience="clinic"
+                hours={s}
               />{" "}
               {!data.today.weekday
-                ? "No emails at weekends."
+                ? "Not a sending day."
                 : data.today.windowOpen
                   ? ""
-                  : "Outside 9:00–17:00, so nothing goes out now."}
+                  : `Outside ${clockLabel(s.windowStart)}–${clockLabel(s.windowEnd)}, so nothing goes out now.`}
             </span>
           </p>
           {s.sendingOn && activeSequences === 0 && (
@@ -945,13 +972,19 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
       {form && (
         <Panel
           title="Sender"
-          description="How the emails are signed, and how fast the daily limit grows."
+          description="When the emails go out, how they're signed, and how fast the daily limit grows."
           info={
             <>
               <p>
                 First day: the limit on the first day sending was switched on.
                 More each day: added every weekday after that. Most a day: the
                 limit never goes above this.
+              </p>
+              <p>
+                Sending hours: emails only go out between these times (Lagos
+                time) on the days ticked, spread evenly across the hours.
+                Clinic and employer emails both follow them. Business mornings
+                usually get the most replies.
               </p>
               <p>
                 The limit is shared by clinic and employer emails. Start slowly:
@@ -978,11 +1011,81 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
                     dailyStart: form.dailyStart,
                     rampPerDay: form.rampPerDay,
                     dailyMax: form.dailyMax,
+                    windowStart: form.windowStart,
+                    windowEnd: form.windowEnd,
+                    sendDays: form.sendDays,
                   }),
                 "Saved",
               );
             }}
           >
+            {/* When the emails go out (owner, 25 Nov 2026: "that matters a lot") */}
+            <div className="space-y-2 rounded-xl bg-rh-canvas p-4 dark:bg-white/[0.03] sm:col-span-2">
+              <p className="text-sm font-medium text-rh-ink dark:text-white">
+                Sending hours{" "}
+                <span className="font-normal text-neutral-500">
+                  (Lagos time) · now {sendingHoursLabel(form)}
+                </span>
+              </p>
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="space-y-1 text-sm text-rh-ink dark:text-white">
+                  From
+                  <input
+                    type="time"
+                    step={900}
+                    value={toTimeInput(form.windowStart)}
+                    onChange={(e) => {
+                      const minutes = fromTimeInput(e.target.value);
+                      if (Number.isFinite(minutes)) setForm({ ...form, windowStart: minutes });
+                    }}
+                    className={cn(fieldClass, "w-32")}
+                  />
+                </label>
+                <label className="space-y-1 text-sm text-rh-ink dark:text-white">
+                  To
+                  <input
+                    type="time"
+                    step={900}
+                    value={toTimeInput(form.windowEnd)}
+                    onChange={(e) => {
+                      const minutes = fromTimeInput(e.target.value);
+                      if (Number.isFinite(minutes)) setForm({ ...form, windowEnd: minutes });
+                    }}
+                    className={cn(fieldClass, "w-32")}
+                  />
+                </label>
+                <div className="flex flex-wrap gap-1.5" role="group" aria-label="Sending days">
+                  {WEEK.map(({ day, label }) => {
+                    const on = form.sendDays.includes(day);
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() =>
+                          setForm({
+                            ...form,
+                            sendDays: on ? form.sendDays.filter((d) => d !== day) : [...form.sendDays, day],
+                          })
+                        }
+                        className={cn(
+                          "h-9 w-12 rounded-lg text-sm font-medium ring-1 ring-inset transition-colors",
+                          on
+                            ? "bg-rh-ink text-white ring-rh-ink dark:bg-white dark:text-rh-ink"
+                            : "bg-white text-neutral-500 ring-black/10 hover:text-rh-ink dark:bg-transparent dark:ring-white/15",
+                        )}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {form.windowEnd - form.windowStart < 30 && (
+                <p className="text-xs text-rose-600">The end time must be at least 30 minutes after the start.</p>
+              )}
+              {form.sendDays.length === 0 && <p className="text-xs text-rose-600">Choose at least one day.</p>}
+            </div>
             <label className="space-y-1 text-sm text-rh-ink dark:text-white">
               From name
               <input

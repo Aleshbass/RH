@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useConvex, useMutation, useQuery } from "convex/react";
 import { makeFunctionReference } from "convex/server";
 import { ConvexError } from "convex/values";
 import { formatDistanceToNowStrict } from "date-fns";
@@ -21,6 +21,13 @@ import {
   Search,
 } from "@/components/icons";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OutreachSender } from "@/components/admin/outreach/OutreachSender";
 import { OutreachGuide } from "@/components/admin/outreach/OutreachHelp";
@@ -118,6 +125,13 @@ const exportRef = makeFunctionReference<
   { city?: string; includeExported?: boolean },
   { rows: Record<string, string>[] }
 >("outreach:adminExportLeads");
+// Every clinic found, with or without an email (read only: nothing is marked exported)
+type EmailFilter = "all" | "with" | "without";
+const exportAllRef = makeFunctionReference<
+  "query",
+  { city?: string; email: EmailFilter },
+  { rows: Record<string, string>[]; capped: boolean }
+>("outreach:adminExportAllLeads");
 
 const STATUS: Record<
   Status,
@@ -175,6 +189,7 @@ export default function ClinicOutreachPage() {
   const update = useMutation(updateRef);
   const recrawl = useMutation(recrawlRef);
   const exportLeads = useMutation(exportRef);
+  const convex = useConvex();
 
   const [searchCity, setSearchCity] = useState("");
   const [country, setCountry] = useState("Nigeria");
@@ -248,6 +263,20 @@ export default function ClinicOutreachPage() {
       );
     });
 
+  // The whole list for a spreadsheet: all clinics found, with an email, or without one
+  const exportAll = (email: EmailFilter) =>
+    run("exportAll", async () => {
+      const { rows, capped } = await convex.query(exportAllRef, city ? { city, email } : { email });
+      const what = email === "with" ? " with an email" : email === "without" ? " without an email" : "";
+      if (rows.length === 0) {
+        toast.message(`No clinics${what}${city ? ` in ${city}` : ""} yet.`);
+        return;
+      }
+      const slug = [city ? city.toLowerCase().replace(/\s+/g, "-") : "all", email === "all" ? "" : `${email}-email`].filter(Boolean).join("-");
+      downloadCsv(`clinics-${slug}-${new Date().toISOString().slice(0, 10)}`, rows);
+      toast.success(`Downloaded ${rows.length} clinic${rows.length === 1 ? "" : "s"}${what}.${capped ? " (The newest 8,000 were checked.)" : ""}`);
+    });
+
   const counts = data?.counts ?? {};
 
   return (
@@ -257,19 +286,39 @@ export default function ClinicOutreachPage() {
         description="Find physiotherapy clinics city by city, collect the email on their website, then email them from the team's own inbox with follow-ups."
         actions={
           tab === "find" && (
-            <button
-              type="button"
-              onClick={exportCsv}
-              disabled={busy !== null || !data}
-              className={softButtonClass}
-            >
-              {busy === "export" ? (
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-              ) : (
-                <Download className="mr-1.5 h-4 w-4" />
-              )}
-              Export ready{city ? ` in ${city}` : ""} (CSV)
-            </button>
+            <div className="flex flex-wrap gap-2">
+              {/* Every clinic found, for a spreadsheet (nothing is marked) */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" disabled={busy !== null || !data} className={softButtonClass}>
+                    {busy === "exportAll" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Download className="mr-1.5 h-4 w-4" />}
+                    Export all clinics{city ? ` in ${city}` : ""}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60 rounded-xl">
+                  <DropdownMenuLabel className="text-xs font-normal text-neutral-500">
+                    A spreadsheet (CSV){city ? ` of ${city}` : " of every city"}. Nothing is marked exported.
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => exportAll("all")}>All clinics found</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => exportAll("with")}>Only clinics with an email</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => exportAll("without")}>Only clinics without an email</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <button
+                type="button"
+                onClick={exportCsv}
+                disabled={busy !== null || !data}
+                className={softButtonClass}
+                title="For a cold-email tool: clinics with an email that haven't been exported, then marked Exported"
+              >
+                {busy === "export" ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-1.5 h-4 w-4" />
+                )}
+                Export ready{city ? ` in ${city}` : ""} (CSV)
+              </button>
+            </div>
           )
         }
       />

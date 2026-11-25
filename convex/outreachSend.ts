@@ -2,7 +2,8 @@
  * Clinic outreach sending (owner, 17 Nov 2026): Admin › Clinic outreach › Send emails.
  *
  *  - Emails go from the team's Zoho inbox (OUTREACH_SMTP_* / OUTREACH_IMAP_* on Convex), one at a
- *    time, weekdays 9:00–17:00 Lagos, spread across the day. A new inbox starts at a few a day and
+ *    time, spread across the sending hours the team sets (9:00–17:00 Lagos, Monday to Friday until
+ *    changed: windowStart, windowEnd, sendDays). A new inbox starts at a few a day and
  *    grows each weekday up to a cap (dailyStart, rampPerDay, dailyMax).
  *  - A sequence is a first email plus follow-ups; a follow-up with no subject replies in the same
  *    thread. An email address is only ever enrolled once.
@@ -42,9 +43,11 @@ export const SENDER_DEFAULTS = {
   dailyStart: 10,
   rampPerDay: 5,
   dailyMax: 40,
+  // Lagos time: 9:00 to 17:00, Monday to Friday
+  windowStart: 9 * 60,
+  windowEnd: 17 * 60,
+  sendDays: [1, 2, 3, 4, 5],
 };
-const WINDOW_START_MIN = 9 * 60;
-const WINDOW_END_MIN = 17 * 60;
 const IN_FLIGHT_MS = 15 * 60 * 1000;
 const RETRY_AFTER_MS = 30 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
@@ -74,6 +77,9 @@ function withDefaults(row: Settings | null) {
     rampPerDay: row?.rampPerDay ?? SENDER_DEFAULTS.rampPerDay,
     dailyMax: row?.dailyMax ?? SENDER_DEFAULTS.dailyMax,
     rampStartedOn: row?.rampStartedOn,
+    windowStart: row?.windowStart ?? SENDER_DEFAULTS.windowStart,
+    windowEnd: row?.windowEnd ?? SENDER_DEFAULTS.windowEnd,
+    sendDays: row?.sendDays?.length ? row.sendDays : SENDER_DEFAULTS.sendDays,
   };
 }
 
@@ -112,9 +118,10 @@ export async function saveEmployerSender(
   );
 }
 
-function windowOpen(now: number) {
+/** Inside the sending hours on a sending day (Lagos time), as the team set them. */
+function windowOpen(now: number, s: Pick<ReturnType<typeof withDefaults>, "windowStart" | "windowEnd" | "sendDays">) {
   const clock = lagosClock(now);
-  return clock.weekday !== 0 && clock.weekday !== 6 && clock.minutes >= WINDOW_START_MIN && clock.minutes < WINDOW_END_MIN;
+  return s.sendDays.includes(clock.weekday) && clock.minutes >= s.windowStart && clock.minutes < s.windowEnd;
 }
 
 async function sentOn(ctx: Ctx, day: string) {
@@ -139,12 +146,12 @@ export const tick = internalMutation({
     const row = await settingsRow(ctx);
     if (!row?.sendingOn) return null;
     const now = Date.now();
-    if (!windowOpen(now)) return null;
-    if (row.inFlightAt && now - row.inFlightAt < IN_FLIGHT_MS) return null;
     const s = withDefaults(row);
+    if (!windowOpen(now, s)) return null;
+    if (row.inFlightAt && now - row.inFlightAt < IN_FLIGHT_MS) return null;
     const clock = lagosClock(now);
     const quota = dailyQuota(s, clock.day);
-    const spread = Math.ceil((quota * Math.min(1, (clock.minutes - WINDOW_START_MIN + 5) / (WINDOW_END_MIN - WINDOW_START_MIN))));
+    const spread = Math.ceil((quota * Math.min(1, (clock.minutes - s.windowStart + 5) / Math.max(30, s.windowEnd - s.windowStart))));
     if ((await sentOn(ctx, clock.day)) >= Math.min(quota, spread)) return null;
 
     const due = await ctx.db
@@ -437,9 +444,14 @@ export async function senderSummary(ctx: QueryCtx) {
     ownSender: employer.own,
     sentToday: await sentOn(ctx, clock.day),
     quota: dailyQuota(s, clock.day),
-    windowOpen: windowOpen(now),
-    weekday: clock.weekday !== 0 && clock.weekday !== 6,
+    windowOpen: windowOpen(now, s),
+    // A sending day (the team chooses which days)
+    weekday: s.sendDays.includes(clock.weekday),
     day: clock.day,
+    // When emails go out, for the page's wording
+    windowStart: s.windowStart,
+    windowEnd: s.windowEnd,
+    sendDays: s.sendDays,
     lastInboxCheckAt: row?.lastInboxCheckAt ?? null,
     lastSendError: row?.lastSendError ?? null,
     // For the "i" next to today's count: how the limit grows and the next sending day's limit
@@ -450,13 +462,12 @@ export async function senderSummary(ctx: QueryCtx) {
   };
 }
 
-/** The next weekday after `day` ("YYYY-MM-DD") and its daily limit: "Monday's limit: 20". */
+/** The next sending day after `day` ("YYYY-MM-DD") and its daily limit: "Monday's limit: 20". */
 function nextSendingDay(s: ReturnType<typeof withDefaults>, day: string) {
   let t = Date.parse(`${day}T00:00:00Z`);
   for (let i = 0; i < 7; i++) {
     t += DAY_MS;
-    const wd = new Date(t).getUTCDay();
-    if (wd !== 0 && wd !== 6) break;
+    if (s.sendDays.includes(new Date(t).getUTCDay())) break;
   }
   const next = new Date(t).toISOString().slice(0, 10);
   // Before sending is first switched on there's no start day yet: the first day gets dailyStart
@@ -576,8 +587,9 @@ export const adminSenderOverview = query({
       today: {
         sent: await sentOn(ctx, clock.day),
         quota: dailyQuota(s, clock.day),
-        windowOpen: windowOpen(now),
-        weekday: clock.weekday !== 0 && clock.weekday !== 6,
+        windowOpen: windowOpen(now, s),
+        // A sending day (the team chooses which days)
+        weekday: s.sendDays.includes(clock.weekday),
         day: clock.day,
         next: nextSendingDay(s, clock.day),
       },
@@ -638,6 +650,10 @@ export const adminSaveSender = mutation({
     dailyStart: v.optional(v.number()),
     rampPerDay: v.optional(v.number()),
     dailyMax: v.optional(v.number()),
+    // When emails go out, Lagos time: minutes after midnight, and the days (0 = Sunday)
+    windowStart: v.optional(v.number()),
+    windowEnd: v.optional(v.number()),
+    sendDays: v.optional(v.array(v.number())),
   },
   handler: async (ctx, args) => {
     const { user } = await requireAdmin(ctx, "outreachSend:adminSaveSender");
@@ -654,6 +670,19 @@ export const adminSaveSender = mutation({
     if (args.dailyStart !== undefined) patch.dailyStart = clampInt(args.dailyStart, 1, 100);
     if (args.rampPerDay !== undefined) patch.rampPerDay = clampInt(args.rampPerDay, 0, 50);
     if (args.dailyMax !== undefined) patch.dailyMax = clampInt(args.dailyMax, 1, 150);
+    if (args.windowStart !== undefined || args.windowEnd !== undefined) {
+      const current = withDefaults(row);
+      const start = clampInt(args.windowStart ?? current.windowStart, 0, 24 * 60 - 30);
+      const end = clampInt(args.windowEnd ?? current.windowEnd, 30, 24 * 60);
+      if (end - start < 30) throw new ConvexError("Leave at least 30 minutes between the start and end times.");
+      patch.windowStart = start;
+      patch.windowEnd = end;
+    }
+    if (args.sendDays !== undefined) {
+      const days = [...new Set(args.sendDays.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort((a, b) => a - b);
+      if (days.length === 0) throw new ConvexError("Choose at least one day to send on.");
+      patch.sendDays = days;
+    }
     if (args.sendingOn !== undefined) {
       if (args.sendingOn && !(process.env.OUTREACH_SMTP_USER && process.env.OUTREACH_SMTP_PASS)) {
         throw new ConvexError("Connect the inbox first: OUTREACH_SMTP_USER and OUTREACH_SMTP_PASS on Convex.");

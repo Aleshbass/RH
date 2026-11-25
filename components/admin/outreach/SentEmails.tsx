@@ -122,7 +122,7 @@ export function SentEmails({ audience, onOpenLead }: { audience: Audience; onOpe
         <EmptyState
           icon={<Send className="h-5 w-5" />}
           title="Nothing sent yet."
-          description="Emails go out on weekdays between 9am and 5pm Lagos time."
+          description="Emails go out in the sending hours set under Sender on Clinic outreach."
         />
       ) : (
         <>

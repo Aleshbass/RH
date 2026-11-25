@@ -122,7 +122,7 @@ export function OutreachNumbersTiles({ n, audience }: { n: OutreachNumbers; audi
           <>
             <p>
               {clinic ? "Clinics" : "Addresses"} in a sequence that haven&apos;t had their first email yet. They go out in the order they were
-              added, within each weekday&apos;s limit.
+              added, within each sending day&apos;s limit.
             </p>
             {n.waitingFollowUp > 0 && (
               <p>
@@ -136,6 +136,32 @@ export function OutreachNumbersTiles({ n, audience }: { n: OutreachNumbers; audi
   );
 }
 
+/** When emails go out, Lagos time, as the team set it on Clinic outreach › Sender (outreachSend.ts). */
+export type SendingHours = { windowStart: number; windowEnd: number; sendDays: number[] };
+export const DEFAULT_SENDING_HOURS: SendingHours = { windowStart: 9 * 60, windowEnd: 17 * 60, sendDays: [1, 2, 3, 4, 5] };
+const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAY_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** "9:00", "17:30" */
+export function clockLabel(minutes: number) {
+  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+/** "Monday to Friday", "every day", "Mon, Wed and Fri" */
+export function sendingDaysLabel(days: number[]) {
+  const sorted = [...new Set(days)].sort((a, b) => a - b);
+  if (sorted.length === 7) return "every day";
+  const consecutive = sorted.length > 2 && sorted.every((d, i) => i === 0 || d === sorted[i - 1] + 1);
+  if (consecutive) return `${DAY_LONG[sorted[0]]} to ${DAY_LONG[sorted[sorted.length - 1]]}`;
+  const names = sorted.map((d) => DAY_SHORT[d]);
+  return names.length === 1 ? `${DAY_LONG[sorted[0]]}s only` : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/** "Monday to Friday, 9:00–17:00 Lagos time" */
+export function sendingHoursLabel(hours: SendingHours = DEFAULT_SENDING_HOURS) {
+  return `${sendingDaysLabel(hours.sendDays)}, ${clockLabel(hours.windowStart)}–${clockLabel(hours.windowEnd)} Lagos time`;
+}
+
 /** Lagos is UTC+1 all year */
 const lagosMinutesNow = () => {
   const d = new Date(Date.now() + 3_600_000);
@@ -143,13 +169,19 @@ const lagosMinutesNow = () => {
 };
 
 /** What today means for sending, in one sentence. */
-function todayLine(t: { sent: number; quota: number; weekday: boolean; windowOpen: boolean; day: string; next: SendingDay }, sendingOn: boolean, audience: Audience) {
+function todayLine(
+  t: { sent: number; quota: number; weekday: boolean; windowOpen: boolean; day: string; next: SendingDay },
+  sendingOn: boolean,
+  audience: Audience,
+  hours: SendingHours
+) {
   const nextLimit = `${dayName(t.next.day)}'s limit: ${t.next.quota}.`;
   if (!sendingOn) {
     return `Sending is switched off, so nothing goes out until someone presses Start sending${audience === "employer" ? " on Clinic outreach" : ""}.`;
   }
-  if (!t.weekday) return `Today is ${dayName(t.day)}: nothing goes out at weekends. ${nextLimit}`;
-  if (lagosMinutesNow() < 9 * 60) return `Today's limit is ${t.quota}. Sending starts at 9am.`;
+  // `weekday`: today is one of the sending days
+  if (!t.weekday) return `Today is ${dayName(t.day)}: not a sending day. ${nextLimit}`;
+  if (lagosMinutesNow() < hours.windowStart) return `Today's limit is ${t.quota}. Sending starts at ${clockLabel(hours.windowStart)}.`;
   if (t.windowOpen) {
     return t.sent >= t.quota ? `Today's limit of ${t.quota} has been reached. ${nextLimit}` : `Today's limit is ${t.quota}, and ${t.sent} have gone so far.`;
   }
@@ -162,11 +194,14 @@ export function DailyLimitTip({
   ramp,
   sendingOn,
   audience,
+  hours = DEFAULT_SENDING_HOURS,
 }: {
   today: { sent: number; quota: number; weekday: boolean; windowOpen: boolean; day: string; next: SendingDay };
   ramp: { dailyStart: number; rampPerDay: number; dailyMax: number };
   sendingOn: boolean;
   audience: Audience;
+  /** The sending hours set on Clinic outreach › Sender */
+  hours?: SendingHours;
 }) {
   return (
     <InfoTip label="How the daily limit works" side="bottom" className="ml-0.5">
@@ -175,11 +210,11 @@ export function DailyLimitTip({
         growing on weekdays even while sending is paused.
       </p>
       <p>
-        Emails only go out on weekdays between 9am and 5pm Lagos time, one at a time, spread across the day. A new mailbox that sends a lot at
-        once lands in spam, so it starts slowly.
+        Emails only go out {sendingHoursLabel(hours)}, one at a time, spread across those hours. Change the hours under Sender on Clinic
+        outreach. A new mailbox that sends a lot at once lands in spam, so it starts slowly.
       </p>
       <p>Clinic and employer emails share this one limit.</p>
-      <p className="font-medium text-rh-ink dark:text-white">{todayLine(today, sendingOn, audience)}</p>
+      <p className="font-medium text-rh-ink dark:text-white">{todayLine(today, sendingOn, audience, hours)}</p>
     </InfoTip>
   );
 }
@@ -204,7 +239,7 @@ const GUIDE_STEPS: Record<Audience, { title: string; text: ReactNode }[]> = {
     },
     {
       title: "Rehabify sends from hello@, slowly",
-      text: "One email at a time, on weekdays between 9am and 5pm Lagos time, a few more each day. Nothing goes out at weekends.",
+      text: "One email at a time, in the sending hours you choose under Sender (Monday to Friday, 9:00–17:00 to start), a few more each day.",
     },
     {
       title: "Replies stop the follow-ups",
@@ -228,7 +263,7 @@ const GUIDE_STEPS: Record<Audience, { title: string; text: ReactNode }[]> = {
       title: "Rehabify sends from hello@, slowly",
       text: (
         <>
-          Weekdays 9am to 5pm Lagos time, one at a time. It&apos;s the same inbox, daily limit and on/off switch as{" "}
+          In the sending hours set under Sender on Clinic outreach, one at a time. It&apos;s the same inbox, daily limit and on/off switch as{" "}
           <Link href="/dashboard/admin/outreach" className="underline underline-offset-2">
             Clinic outreach
           </Link>

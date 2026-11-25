@@ -728,3 +728,44 @@ export const adminExportLeads = mutation({
     return { rows };
   },
 });
+
+/**
+ * Every clinic found, for a spreadsheet (owner, 25 Nov 2026): with an email, without one, or all,
+ * in one city or everywhere. Read only: unlike adminExportLeads, nothing is marked exported, and
+ * each row says its status (including "do not contact", so the team can see who to leave alone).
+ */
+export const adminExportAllLeads = query({
+  args: {
+    city: v.optional(v.string()),
+    email: v.union(v.literal("all"), v.literal("with"), v.literal("without")),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, "outreach:adminExportAllLeads");
+    const leads = await ctx.db.query("outreachLeads").order("desc").take(8000);
+    const rows: Record<string, string>[] = [];
+    for (const lead of leads) {
+      if (!isClinicLead(lead) || (args.city && lead.city !== args.city)) continue;
+      if (args.email === "with" && !lead.email) continue;
+      if (args.email === "without" && lead.email) continue;
+      rows.push({
+        clinic: lead.name,
+        city: lead.city,
+        status: lead.status.replace(/_/g, " "),
+        email: lead.email ?? "",
+        other_emails: (lead.otherEmails ?? []).join("; "),
+        phone: lead.phone ?? "",
+        website: lead.website ?? "",
+        address: lead.address ?? "",
+        google_maps: lead.mapsUrl ?? "",
+        rating: lead.rating !== undefined ? String(lead.rating) : "",
+        reviews: lead.reviews !== undefined ? String(lead.reviews) : "",
+        found_by: lead.source.replace(/_/g, " "),
+        found_on: new Date(lead._creationTime).toISOString().slice(0, 10),
+        note: lead.note ?? "",
+      });
+    }
+    // City, then name: easy to work through
+    rows.sort((a, b) => a.city.localeCompare(b.city) || a.clinic.localeCompare(b.clinic));
+    return { rows, capped: leads.length >= 8000 };
+  },
+});

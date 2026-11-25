@@ -26,7 +26,7 @@ import {
 } from "@/components/admin/ui";
 import { cn } from "@/lib/utils";
 import { employerApi, errorText, type SeqStatus, type Step } from "./employerApi";
-import { DailyLimitTip, OutreachNumbersTiles, REPLIES_INFO, inboxLabel } from "./OutreachHelp";
+import { DailyLimitTip, OutreachNumbersTiles, REPLIES_INFO, clockLabel, inboxLabel, sendingHoursLabel } from "./OutreachHelp";
 
 /**
  * A starting point the team edits: short and plain, from what /platform/employers already says
@@ -139,7 +139,7 @@ export function EmployerSequences({ onOpenCompany }: { onOpenCompany?: (leadId: 
         title="Sending"
         description={
           s.configured
-            ? `From ${s.fromName} <${s.address}>, one email at a time, weekdays 9:00–17:00 Lagos time.`
+            ? `From ${s.fromName} <${s.address}>, one email at a time, ${sendingHoursLabel(s)}.`
             : "The inbox isn't connected yet: OUTREACH_SMTP_USER and OUTREACH_SMTP_PASS on Convex."
         }
         info={
@@ -165,8 +165,13 @@ export function EmployerSequences({ onOpenCompany }: { onOpenCompany?: (leadId: 
                 ramp={s}
                 sendingOn={s.sendingOn}
                 audience="employer"
+                hours={s}
               />{" "}
-              {!s.weekday ? "No emails at weekends." : s.windowOpen ? "" : "Outside 9:00–17:00, so nothing goes out now."}
+              {!s.weekday
+                ? "Not a sending day."
+                : s.windowOpen
+                  ? ""
+                  : `Outside ${clockLabel(s.windowStart)}–${clockLabel(s.windowEnd)}, so nothing goes out now.`}
             </span>
           </p>
           {s.sendingOn && activeSequences === 0 && (
