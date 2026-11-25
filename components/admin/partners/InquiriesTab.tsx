@@ -29,14 +29,17 @@ const STATUS_TONE: Record<InquiryStatus, 'amber' | 'teal' | 'neutral'> = { new: 
 const STATUS_LABEL: Record<InquiryStatus, string> = { new: 'New', contacted: 'Contacted', closed: 'Closed' }
 
 // "Book a demo" requests from the partners page share this table, marked kind: "demo"; employer
-// "Request a pilot" requests from /platform/employers are kind: "employer_pilot"
-type InquiryKind = 'all' | 'demo' | 'employer_pilot' | 'partnership'
+// "Request a pilot" requests from /platform/employers are kind: "employer_pilot", and the
+// complimentary workplace wellness check sign-ups there are kind: "wellness_check"
+type InquiryKind = 'all' | 'demo' | 'employer_pilot' | 'wellness_check' | 'partnership'
 const isDemo = (inquiry: Inquiry) => inquiry.kind === 'demo'
 const isPilot = (inquiry: Inquiry) => inquiry.kind === 'employer_pilot'
-const isPartnership = (inquiry: Inquiry) => !isDemo(inquiry) && !isPilot(inquiry)
+const isWellness = (inquiry: Inquiry) => inquiry.kind === 'wellness_check'
+const isPartnership = (inquiry: Inquiry) => !isDemo(inquiry) && !isPilot(inquiry) && !isWellness(inquiry)
 const KIND_MATCH: Record<Exclude<InquiryKind, 'all'>, (inquiry: Inquiry) => boolean> = {
   demo: isDemo,
   employer_pilot: isPilot,
+  wellness_check: isWellness,
   partnership: isPartnership,
 }
 
@@ -58,6 +61,7 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
       all: rows.length,
       demo: rows.filter(isDemo).length,
       employer_pilot: rows.filter(isPilot).length,
+      wellness_check: rows.filter(isWellness).length,
       partnership: rows.filter(isPartnership).length,
     }
   }, [inquiries])
@@ -102,6 +106,7 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
           { value: 'all', label: 'Everything', count: kindCounts.all },
           { value: 'demo', label: 'Demo requests', count: kindCounts.demo },
           { value: 'employer_pilot', label: 'Employer pilots', count: kindCounts.employer_pilot },
+          { value: 'wellness_check', label: 'Wellness checks', count: kindCounts.wellness_check },
           { value: 'partnership', label: 'Partnerships', count: kindCounts.partnership },
         ]}
       />
@@ -137,7 +142,7 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
             description={
               search || filter !== 'all' || kind !== 'all'
                 ? 'Try adjusting your search or filters.'
-                : 'Partnership inquiries, demo requests and employer pilot requests from the website appear here.'
+                : 'Partnership inquiries, demo requests, employer pilot requests and wellness check sign-ups from the website appear here.'
             }
           />
         </div>
@@ -156,6 +161,7 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
                         </h3>
                         {isDemo(inquiry) && <StatusBadge tone="teal">Demo request</StatusBadge>}
                         {isPilot(inquiry) && <StatusBadge tone="teal">Employer pilot</StatusBadge>}
+                        {isWellness(inquiry) && <StatusBadge tone="teal">Wellness check</StatusBadge>}
                         {inquiry.organizationType && <StatusBadge tone="teal">{inquiry.organizationType}</StatusBadge>}
                         <StatusBadge tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</StatusBadge>
                       </div>
@@ -201,8 +207,22 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
                       {inquiry.workerCount !== undefined && (
                         <p className="text-neutral-500 dark:text-neutral-400">{inquiry.workerCount.toLocaleString('en-NG')} workers</p>
                       )}
+                      {inquiry.employeeRange && <p className="text-neutral-500 dark:text-neutral-400">{inquiry.employeeRange} employees</p>}
                     </div>
                   </div>
+
+                  {isWellness(inquiry) && (
+                    <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
+                      <div>
+                        <p className="text-neutral-500 dark:text-neutral-400">Industry & location</p>
+                        <p className="text-sm text-rh-ink dark:text-neutral-200">{[inquiry.industry, inquiry.location].filter(Boolean).join(' · ') || 'Not given'}</p>
+                      </div>
+                      <div>
+                        <p className="text-neutral-500 dark:text-neutral-400">Would like to improve</p>
+                        <p className="text-sm text-rh-ink dark:text-neutral-200">{inquiry.interests?.length ? inquiry.interests.join(', ') : 'Not given'}</p>
+                      </div>
+                    </div>
+                  )}
 
                   {inquiry.workType ? (
                     <div>
@@ -218,7 +238,7 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
 
                 <div className="flex w-full flex-col justify-center gap-2 border-t border-black/[0.05] bg-rh-canvas/60 p-5 dark:border-white/[0.06] dark:bg-white/[0.02] md:w-56 md:border-l md:border-t-0">
                   <Button asChild className={primaryButtonClass}>
-                    <a href={`mailto:${inquiry.email}?subject=${isDemo(inquiry) ? 'Your Rehabify demo' : isPilot(inquiry) ? 'Your Rehabify for Work pilot' : 'Partnership with RehabifyHealth'}`}>
+                    <a href={`mailto:${inquiry.email}?subject=${isDemo(inquiry) ? 'Your Rehabify demo' : isPilot(inquiry) ? 'Your Rehabify for Work pilot' : isWellness(inquiry) ? 'Your workplace wellness check' : 'Partnership with RehabifyHealth'}`}>
                       <Mail className="mr-2 h-4 w-4" /> Email contact
                     </a>
                   </Button>

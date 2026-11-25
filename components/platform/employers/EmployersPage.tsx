@@ -12,10 +12,12 @@ import { LoopVideo } from "@/components/marketing/LoopVideo";
 import { SnapCarousel } from "@/components/marketing/SnapCarousel";
 import { cn } from "@/lib/utils";
 import { PilotRequestDialog } from "./PilotRequestDialog";
+import { WellnessCheckForm } from "./WellnessCheckForm";
 
 /**
  * /platform/employers (Rehabify for Work): hero with Joy checking in on a worker, how it works as
- * five animated cards, who it's for, what you get and pricing, questions and a closing call. Same
+ * five animated cards, who it's for, the complimentary workplace wellness check (its own sign-up
+ * form, "#wellness-check"), what you get and pricing, questions and a closing call. Same
  * look and motion as the physio page. "Request a pilot" opens a form (and "#pilot" opens it from
  * other pages); a slim bar keeps the button in reach once the hero has scrolled away.
  */
@@ -417,6 +419,14 @@ export default function EmployersPage() {
       <section ref={heroRef} className="px-4 pb-16 pt-32 sm:px-6 sm:pt-40 lg:pb-24">
         <div className="mx-auto grid max-w-6xl items-center gap-10 lg:grid-cols-[1.05fr_1fr] lg:gap-14">
           <motion.div initial={reduce ? false : { opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: EASE }}>
+            <a
+              href="#wellness-check"
+              className="group mb-6 inline-flex items-center gap-2 rounded-full bg-white py-1.5 pl-1.5 pr-4 text-sm font-semibold text-rh-ink ring-1 ring-inset ring-rh-ink/10 transition-colors hover:bg-rh-ink/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink"
+            >
+              <span className="rounded-full bg-rh-lime px-2.5 py-1 text-xs font-bold">Free</span>
+              Register for a workplace wellness check
+              <ArrowRight className="h-3.5 w-3.5 transition-transform duration-300 group-hover:translate-x-0.5" />
+            </a>
             <h1 className="max-w-xl text-[40px] font-bold leading-[1.04] tracking-tight text-rh-ink sm:text-[56px]">
               Healthcare that helps your business grow.
             </h1>
@@ -481,6 +491,56 @@ export default function EmployersPage() {
                 </Rise>
               );
             })}
+          </div>
+        </div>
+      </section>
+
+      {/* Complimentary workplace wellness check: its own sign-up, separate from the pilot (owner, 25 Nov 2026) */}
+      <section id="wellness-check" className="scroll-mt-24 px-4 pb-20 sm:px-6 lg:pb-28">
+        <div className="mx-auto max-w-6xl">
+          <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+            <Rise className="flex">
+              <article className="relative flex w-full flex-col overflow-hidden rounded-[2rem] bg-rh-ink p-6 text-white sm:p-8 lg:p-10">
+                <PairingShapes className="-bottom-14 -right-12 hidden h-48 w-48 opacity-70 sm:block" />
+                <span className="relative inline-flex w-fit rounded-full bg-rh-lime px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] text-rh-ink">
+                  Complimentary
+                </span>
+                <h2 className="relative mt-5 text-[32px] font-bold leading-[1.08] tracking-tight sm:text-[40px]">Workplace Wellness Check</h2>
+                <p className="relative mt-4 text-[20px] font-semibold leading-snug text-white sm:text-[22px]">
+                  Good workers are hard to replace. Let&apos;s help you look after yours.
+                </p>
+                <div className="relative mt-5 space-y-4 text-[16px] leading-relaxed text-white/75">
+                  <p>
+                    Your employees spend a significant part of their lives at work. But how often do you get the chance to understand how their
+                    daily work affects their physical health?
+                  </p>
+                  <p>Rehabify is inviting organisations to register for a complimentary introductory workplace wellness check.</p>
+                  <p>
+                    Our physiotherapy team will visit selected workplaces to explore common physical health concerns, review everyday work demands
+                    and share practical recommendations to help employees work more comfortably and safely.
+                  </p>
+                </div>
+                <ul className="relative mt-6 space-y-2.5">
+                  {["Common physical health concerns", "Everyday work demands", "Practical recommendations for your team"].map((item) => (
+                    <li key={item} className="flex items-center gap-3 text-[15px] font-semibold">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rh-lime">
+                        <Check className="h-3 w-3 text-rh-ink" />
+                      </span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                <p className="relative mt-auto pt-8 text-sm leading-relaxed text-white/60">
+                  Complete the short form to register your interest. Our team will contact you to discuss the next steps.
+                </p>
+              </article>
+            </Rise>
+
+            <Rise delay={0.06} className="flex">
+              <div className="w-full rounded-[2rem] bg-white p-6 ring-1 ring-inset ring-rh-ink/[0.06] sm:p-8 lg:p-10">
+                <WellnessCheckForm />
+              </div>
+            </Rise>
           </div>
         </div>
       </section>

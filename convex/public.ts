@@ -206,3 +206,94 @@ export const requestEmployerPilot = mutation({
     return { success: true, inquiryId };
   },
 });
+
+/** Employee ranges the wellness check form offers (components/platform/employers/WellnessCheckForm.tsx). */
+const EMPLOYEE_RANGES = ["1–20", "21–50", "51–100", "101–500", "501–1,000", "More than 1,000"];
+
+/**
+ * "Complimentary Workplace Wellness Check" on /platform/employers: an organisation registers
+ * interest in an introductory visit from the physiotherapy team (owner, 25 Nov 2026). Separate
+ * from the pilot request; saved as kind "wellness_check" for Admin › Partnerships › Inquiries and
+ * added to Employer outreach, like a pilot request.
+ */
+export const registerWellnessCheck = mutation({
+  args: {
+    organisation: v.string(),
+    industry: v.string(),
+    employeeRange: v.string(),
+    location: v.string(),
+    name: v.string(),
+    role: v.string(),
+    email: v.string(),
+    phone: v.string(),
+    interests: v.array(v.string()),
+    message: v.string(),
+    consent: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    // Public form: trim and cap every field
+    const clip = (value: string, max: number) => value.trim().slice(0, max);
+    const organization = clip(args.organisation, 160);
+    const industry = clip(args.industry, 120);
+    const location = clip(args.location, 160);
+    const name = clip(args.name, 120);
+    const role = clip(args.role, 120);
+    const email = clip(args.email, 200).toLowerCase();
+    const phone = clip(args.phone, 40);
+    const message = clip(args.message, 2000);
+    const interests = [...new Set(args.interests.map((i) => clip(i, 120)).filter(Boolean))].slice(0, 10);
+    if (!organization || !industry || !location || !name || !role || !email || !phone) {
+      throw new Error("Please fill in every required field.");
+    }
+    if (!EMPLOYEE_RANGES.includes(args.employeeRange)) throw new Error("Choose roughly how many employees you have.");
+    if (!args.consent) throw new Error("Please agree to be contacted about your request.");
+
+    const now = Date.now();
+    const inquiryId = await ctx.db.insert("partnershipInquiries", {
+      kind: "wellness_check",
+      name,
+      email,
+      phone,
+      organization,
+      role,
+      industry,
+      employeeRange: args.employeeRange,
+      location,
+      interests,
+      message,
+      consentAt: now,
+      status: "new",
+      createdAt: now,
+    });
+
+    // Into Employer outreach too, as a company that asked us (scheduled, so the request is never lost)
+    await ctx.scheduler.runAfter(0, pilotToPipelineRef, { inquiryId });
+
+    const link = "/dashboard/admin/partnerships?tab=inquiries";
+    const body = `${organization} (${args.employeeRange} employees, ${location}) registered for a workplace wellness check.`;
+    const admins = await ctx.db.query("users")
+      .withIndex("by_role", q => q.eq("role", "admin"))
+      .collect();
+    for (const admin of admins) {
+      await insertNotification(ctx, {
+        userId: admin._id,
+        type: "system_alert",
+        title: "New workplace wellness check request",
+        message: body,
+        payload: {
+          title: "New workplace wellness check request",
+          body,
+          link,
+          data: { inquiryId, organization, actionUrl: link },
+        },
+        data: { inquiryId, organization },
+        status: "pending",
+        priority: "high",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return { success: true, inquiryId };
+  },
+});

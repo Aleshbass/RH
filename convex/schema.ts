@@ -4761,8 +4761,9 @@ export default defineSchema({
 
   partnershipInquiries: defineTable({
     // "demo" = Book a demo on the partners page; "employer_pilot" = Request a pilot on
+    // /platform/employers; "wellness_check" = the complimentary workplace wellness check sign-up on
     // /platform/employers; missing on older rows, which are partnership inquiries
-    kind: v.optional(v.union(v.literal("partnership"), v.literal("demo"), v.literal("employer_pilot"))),
+    kind: v.optional(v.union(v.literal("partnership"), v.literal("demo"), v.literal("employer_pilot"), v.literal("wellness_check"))),
     name: v.string(),
     email: v.string(),
     phone: v.optional(v.string()),
@@ -4772,6 +4773,13 @@ export default defineSchema({
     role: v.optional(v.string()),
     workerCount: v.optional(v.number()),
     workType: v.optional(v.string()),
+    // Wellness check sign-ups: industry, employees ("21–50"), "city, state", what they'd like to
+    // improve, and when they agreed to be contacted
+    industry: v.optional(v.string()),
+    employeeRange: v.optional(v.string()),
+    location: v.optional(v.string()),
+    interests: v.optional(v.array(v.string())),
+    consentAt: v.optional(v.number()),
     status: v.union(v.literal("new"), v.literal("contacted"), v.literal("closed")),
     createdAt: v.number(),
   }).index("by_status", ["status"]).index("by_created", ["createdAt"]),
@@ -5114,6 +5122,11 @@ export default defineSchema({
     dailyStart: v.optional(v.number()),
     rampPerDay: v.optional(v.number()),
     dailyMax: v.optional(v.number()),
+    // When emails go out, Lagos time (owner, 25 Nov 2026): minutes after midnight, and the days
+    // (0 = Sunday … 6 = Saturday). Unset: 9:00–17:00, Monday to Friday
+    windowStart: v.optional(v.number()),
+    windowEnd: v.optional(v.number()),
+    sendDays: v.optional(v.array(v.number())),
     rampStartedOn: v.optional(v.string()), // Lagos day sending was first switched on
     inFlightAt: v.optional(v.number()), // one email at a time
     lastSendError: v.optional(v.string()),

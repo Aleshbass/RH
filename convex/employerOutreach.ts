@@ -1353,7 +1353,8 @@ async function pilotLead(ctx: MutationCtx, inquiry: Doc<"partnershipInquiries">)
       kind: "employer",
       name: inquiry.organization,
       nameKey: companyKey(inquiry.organization, ""),
-      city: "",
+      // Wellness check sign-ups give "city, state"
+      city: inquiry.location ?? "",
       country: "Nigeria",
       // A work email's domain is the company's website
       website: domain ? `https://${domain}` : undefined,
@@ -1361,7 +1362,7 @@ async function pilotLead(ctx: MutationCtx, inquiry: Doc<"partnershipInquiries">)
       source: "pilot_form",
       status: "replied",
       crawlStatus: domain ? "pending" : undefined,
-      staffSize: workers ? String(workers) : undefined,
+      staffSize: workers ? String(workers) : inquiry.employeeRange,
       dealStaffCount: workers,
       stage: "replied",
       stageChangedAt: now,
@@ -1389,7 +1390,11 @@ async function pilotLead(ctx: MutationCtx, inquiry: Doc<"partnershipInquiries">)
     emailStatus: "pilot_form",
     phone: inquiry.phone,
     source: "pilot_form",
-    notes: inquiry.workType ? `Their work: ${inquiry.workType}`.slice(0, 500) : undefined,
+    notes: inquiry.workType
+      ? `Their work: ${inquiry.workType}`.slice(0, 500)
+      : inquiry.industry
+        ? `Industry: ${inquiry.industry}${inquiry.interests?.length ? `. Wants help with: ${inquiry.interests.join(", ")}` : ""}`.slice(0, 500)
+        : undefined,
     createdAt: now,
   });
   const who = [inquiry.name, inquiry.role].filter(Boolean).join(", ");
@@ -1397,11 +1402,11 @@ async function pilotLead(ctx: MutationCtx, inquiry: Doc<"partnershipInquiries">)
     ctx,
     lead._id,
     "reply",
-    `Pilot request from the website: ${who}${workers ? `, ${workers.toLocaleString("en-NG")} workers` : ""}${inquiry.workType ? ` (${inquiry.workType})` : ""}`
+    `${inquiry.kind === "wellness_check" ? `Workplace wellness check sign-up from the website (${inquiry.employeeRange ?? "?"} employees)` : "Pilot request from the website"}: ${who}${workers ? `, ${workers.toLocaleString("en-NG")} workers` : ""}${inquiry.workType ? ` (${inquiry.workType})` : ""}`
   );
   if (result === "linked" && canAutoAdvance(lead.stage, "replied")) {
     await ctx.db.patch(lead._id, { stage: "replied", stageChangedAt: now });
-    await logActivity(ctx, lead._id, "stage", `${STAGE_LABEL.replied}: pilot request`);
+    await logActivity(ctx, lead._id, "stage", `${STAGE_LABEL.replied}: ${inquiry.kind === "wellness_check" ? "wellness check sign-up" : "pilot request"}`);
   }
   return result;
 }
@@ -1411,7 +1416,7 @@ export const pilotToPipeline = internalMutation({
   args: { inquiryId: v.id("partnershipInquiries") },
   handler: async (ctx, args) => {
     const inquiry = await ctx.db.get(args.inquiryId);
-    if (inquiry?.kind === "employer_pilot") await pilotLead(ctx, inquiry);
+    if (inquiry?.kind === "employer_pilot" || inquiry?.kind === "wellness_check") await pilotLead(ctx, inquiry);
     return null;
   },
 });
