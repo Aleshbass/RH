@@ -44,6 +44,8 @@ import {
   type PhysioMode,
 } from '@/components/admin/physios/shared'
 import { RehabifyId } from '@/components/shared/RehabifyId'
+import { CountryFlag } from '@/components/onboarding/common/CountryPicker'
+import { countryCodeFromName } from '@/lib/practiceCountries'
 import { cn } from '@/lib/utils'
 
 const BASE_PATH = '/dashboard/admin/physiotherapists'
@@ -62,6 +64,11 @@ const SORT_LABEL: Record<SortKey, string> = { patients: 'Most patients', newest:
 const ROW_GRID =
   'xl:grid xl:grid-cols-[minmax(0,2.3fr)_minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1.25fr)_minmax(0,1.2fr)_minmax(0,1.1fr)_16px] xl:items-center xl:gap-4'
 
+const HOME_COUNTRY = 'Nigeria'
+
+/** Search text that matches a place however it's typed: case, commas and spaces don't matter. */
+const placeText = (value: string) => value.toLowerCase().replace(/[,.]/g, ' ').replace(/\s+/g, ' ').trim()
+
 function pick<T extends string>(value: string | null | undefined, allowed: readonly T[], fallback: T): T {
   return value && (allowed as readonly string[]).includes(value) ? (value as T) : fallback
 }
@@ -77,6 +84,8 @@ function PhysiotherapistsDirectory() {
   const sort = pick(searchParams?.get('sort'), SORTS, 'patients')
   const hasPatients = searchParams?.get('patients') === '1'
   const urlSearch = searchParams?.get('q') ?? ''
+  // A country, as saved on their profile ("all" or unset: every country)
+  const country = searchParams?.get('country') ?? 'all'
   const openId = searchParams?.get('physio') ?? null
 
   /** This page's URL with some filters changed (null removes one). */
@@ -107,7 +116,7 @@ function PhysiotherapistsDirectory() {
   }, [search, urlSearch, setParams])
 
   const [limit, setLimit] = useState(PAGE_SIZE)
-  useEffect(() => setLimit(PAGE_SIZE), [mode, status, sort, hasPatients, search])
+  useEffect(() => setLimit(PAGE_SIZE), [mode, status, sort, hasPatients, search, country])
 
   const data = useQuery(physioDirectoryRef, {})
   const rows = useMemo(() => data?.rows ?? [], [data])
@@ -129,10 +138,22 @@ function PhysiotherapistsDirectory() {
     }
   }, [rows])
 
+  // Every country physios practise in, Nigeria first, with how many are in each
+  const countries = useMemo(() => {
+    const tally = new Map<string, number>()
+    for (const row of rows) tally.set(row.country, (tally.get(row.country) ?? 0) + 1)
+    return [...tally.entries()]
+      .sort((a, b) => (a[0] === HOME_COUNTRY ? -1 : b[0] === HOME_COUNTRY ? 1 : b[1] - a[1] || a[0].localeCompare(b[0])))
+      .map(([name, count]) => ({ name, count }))
+  }, [rows])
+  const abroad = rows.filter((row) => row.country !== HOME_COUNTRY).length
+
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase()
     const termCompact = compact(term)
+    const termPlace = placeText(term)
     const matches = rows.filter((row) => {
+      if (country !== 'all' && (country === 'abroad' ? row.country === HOME_COUNTRY : row.country !== country)) return false
       if (mode !== 'all' && row.mode !== mode) return false
       if (status === 'suspended' ? !(row.suspended || row.clinicSuspended) : status !== 'all' && row.approvalStatus !== status) {
         return false
@@ -143,7 +164,10 @@ function PhysiotherapistsDirectory() {
         row.name.toLowerCase().includes(term) ||
         (row.email ?? '').toLowerCase().includes(term) ||
         (row.phone ?? '').replace(/\s/g, '').includes(term.replace(/\s/g, '')) ||
-        (termCompact.length > 0 && compact(row.rehabifyId ?? '').includes(termCompact))
+        (termCompact.length > 0 && compact(row.rehabifyId ?? '').includes(termCompact)) ||
+        // Location: their practice address, their clinic, or the country they work in
+        (termPlace.length > 0 &&
+          [row.location, row.clinicName, row.country].some((value) => value && placeText(value).includes(termPlace)))
       )
     })
     const byName = (a: DirectoryRow, b: DirectoryRow) => a.name.localeCompare(b.name)
@@ -156,15 +180,15 @@ function PhysiotherapistsDirectory() {
         byName(a, b)
       )
     })
-  }, [rows, mode, status, hasPatients, search, sort])
+  }, [rows, mode, status, hasPatients, search, sort, country])
 
   const shown = visible.slice(0, limit)
-  const filtered = mode !== 'all' || status !== 'all' || hasPatients || search.trim() !== ''
+  const filtered = mode !== 'all' || status !== 'all' || hasPatients || search.trim() !== '' || country !== 'all'
   const preview = openId ? (rows.find((row) => row.userId === openId) ?? null) : null
 
   const clearFilters = () => {
     setSearch('')
-    setParams({ mode: null, status: null, patients: null, q: null })
+    setParams({ mode: null, status: null, patients: null, q: null, country: null })
   }
 
   const exportCsv = () =>
@@ -178,6 +202,7 @@ function PhysiotherapistsDirectory() {
         Mode: MODE_LABEL[row.mode],
         Clinic: row.clinicName ?? '',
         Location: row.location ?? '',
+        Country: row.country,
         Approval: APPROVAL_LABEL[row.approvalStatus],
         Suspended: row.suspended ? 'Yes' : 'No',
         Listed: row.marketplaceListed ? 'Yes' : 'No',
@@ -259,7 +284,7 @@ function PhysiotherapistsDirectory() {
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search name, email or ID"
+                placeholder="Search name, email, ID or location"
                 aria-label="Search physiotherapists"
                 className={cn(inputClass, 'h-10 pl-9 pr-9')}
               />
@@ -275,6 +300,23 @@ function PhysiotherapistsDirectory() {
               )}
             </div>
             <div className="flex gap-2">
+              {/* Physios from other countries, in one tap (owner, 26 Nov 2026) */}
+              {countries.length > 1 && (
+                <Select value={country} onValueChange={(value) => setParams({ country: value === 'all' ? null : value })}>
+                  <SelectTrigger className={cn(inputClass, 'h-10 flex-1 sm:w-48 sm:flex-none')} aria-label="Country">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All countries ({rows.length})</SelectItem>
+                    <SelectItem value="abroad">Outside Nigeria ({abroad})</SelectItem>
+                    {countries.map((item) => (
+                      <SelectItem key={item.name} value={item.name}>
+                        {item.name} ({item.count})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Select value={sort} onValueChange={(value) => setParams({ sort: value === 'patients' ? null : value })}>
                 <SelectTrigger className={cn(inputClass, 'h-10 flex-1 sm:w-44 sm:flex-none')} aria-label="Sort by">
                   <SelectValue />
@@ -453,6 +495,16 @@ function StatusCell({ row }: { row: DirectoryRow }) {
 }
 
 /** One physio. A button that opens the drawer; the layout stacks below xl. */
+/** A physio outside Nigeria: their flag and country, so they stand out in the list. */
+function CountryBadge({ country }: { country: string }) {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800 dark:bg-sky-400/10 dark:text-sky-200">
+      <CountryFlag code={countryCodeFromName(country)} className="h-3 w-[18px]" />
+      {country}
+    </span>
+  )
+}
+
 function PhysioRow({ row, active, onOpen }: { row: DirectoryRow; active: boolean; onOpen: () => void }) {
   const place = row.mode === 'clinic' && row.clinicName ? row.clinicName : null
   return (
@@ -474,6 +526,7 @@ function PhysioRow({ row, active, onOpen }: { row: DirectoryRow; active: boolean
           <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <span className="min-w-0 truncate text-sm font-semibold text-rh-ink dark:text-white">{row.name}</span>
             <RehabifyId value={row.rehabifyId} copyable={false} />
+            {row.country !== HOME_COUNTRY && <CountryBadge country={row.country} />}
           </span>
           <span className="block truncate text-xs text-neutral-500 dark:text-neutral-400">
             {row.email ?? row.phone ?? 'No contact details'}

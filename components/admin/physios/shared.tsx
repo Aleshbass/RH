@@ -32,6 +32,8 @@ export type DirectoryRow = {
   suspended: boolean
   marketplaceListed: boolean
   location: string | null
+  /** Where they practise; "Nigeria" when not set */
+  country: string
   patients: SourceSplit
   patientsCapped: boolean
   sessionsNext7Days: number

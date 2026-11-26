@@ -333,6 +333,9 @@ export const adminListApprovalQueue = query({
         let documents: { _id: string; fileName: string; documentType: string; uploadedAt?: number }[] = [];
         let summary: {
           licenseNumber?: string;
+          /** Where they practise ("Nigeria" when not set) and the board that licensed them */
+          country?: string;
+          certificationBoard?: string;
           location?: string;
           yearsOfExperience?: number;
           clinicName?: string;
@@ -351,6 +354,8 @@ export const adminListApprovalQueue = query({
           if (profile) {
             summary = {
               licenseNumber: profile.licenseNumber,
+              country: profile.country?.trim() || "Nigeria",
+              certificationBoard: profile.certificationBoard,
               location: profile.location,
               yearsOfExperience: profile.yearsOfExperience,
               specializations: (profile.specializations ?? []).slice(0, 4),

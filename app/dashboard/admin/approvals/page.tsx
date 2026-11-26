@@ -48,6 +48,8 @@ import {
 import { devToolsEnabled } from '@/components/admin/shell/adminNav'
 import { UserApprovalDialog, documentLabel } from '@/components/admin/UserApprovalDialog'
 import { RoleBadge, UserAvatar, displayName } from '@/components/dashboard/admin/UserManagement'
+import { CountryFlag } from '@/components/onboarding/common/CountryPicker'
+import { countryCodeFromName } from '@/lib/practiceCountries'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 
@@ -68,6 +70,8 @@ type QueueItem = {
   }
   summary: {
     licenseNumber?: string
+    country?: string
+    certificationBoard?: string
     location?: string
     yearsOfExperience?: number
     clinicName?: string
@@ -377,7 +381,15 @@ export default function AdminApprovalsPage() {
                                       : 'Rehabify physio'}
                               </span>
                             )}
+                            {/* Physios outside Nigeria stand out: their country and the board to check the licence with */}
+                            {item.summary.country && item.summary.country !== 'Nigeria' && (
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-2 py-0.5 font-semibold text-sky-800 dark:bg-sky-400/10 dark:text-sky-200">
+                                <CountryFlag code={countryCodeFromName(item.summary.country)} className="h-3 w-[18px]" />
+                                {item.summary.country}
+                              </span>
+                            )}
                             {item.summary.licenseNumber && <span className="font-mono">Licence {item.summary.licenseNumber}</span>}
+                            {item.summary.certificationBoard && <span>{item.summary.certificationBoard}</span>}
                             {item.summary.yearsOfExperience !== undefined && <span>{item.summary.yearsOfExperience} yrs experience</span>}
                             {item.summary.location && (
                               <span className="inline-flex items-center gap-1">

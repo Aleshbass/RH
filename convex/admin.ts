@@ -1645,6 +1645,9 @@ export const adminPhysioDirectory = query({
               profile.isAvailableOnMarketplace !== false
           ),
           location: physioLocation(profile, clinic),
+          // Where they practise (owner, 26 Nov 2026: physios from other countries must be easy to find);
+          // empty means Nigeria, the default at sign-up
+          country: profile?.country?.trim() || "Nigeria",
           patients,
           patientsCapped,
           sessionsNext7Days: booked.filter((a) => a.startTime < weekEnd).length,
