@@ -1,8 +1,8 @@
 /**
- * The one way platform emails leave: Resend first, Amazon SES as the backup (owner 2026-11-20).
- * SES takes over whenever Resend doesn't take the email: its daily/monthly quota is used up, the
- * key is missing or rejected, or Resend is down. A used-up Resend quota still alerts the admins
- * (resendQuota.ts) so they know the backup is carrying the load.
+ * The one way platform emails leave: Amazon SES first, Resend as the backup (owner 2026-11-26,
+ * once SES left the sandbox: 50,000 a day, 14 a second; Resend's free plan is 100 a day). Resend
+ * takes over whenever SES doesn't take the email: SES isn't set up, refuses it, or is down. A
+ * used-up Resend quota still alerts the admins (resendQuota.ts).
  *
  * Group campaigns (convex/actions/marketingSend.ts) stay on Resend only: they rely on Resend
  * audiences, unsubscribes and open tracking.
@@ -44,9 +44,17 @@ function sesFrom(from: string): string {
  * (e.g. "template:PAYMENT_RECEIPT", "clinic-staff-invite").
  */
 export async function deliverEmail(email: OutgoingEmail, source: string): Promise<DeliveryResult> {
+  // Amazon SES first
+  let sesError = "SES is not set up";
+  if (sesConfigured()) {
+    const ses = await sendViaSes({ ...email, from: sesFrom(email.from) });
+    if (ses.ok) return { success: true, id: ses.messageId, provider: "ses" };
+    sesError = ses.error ?? "SES refused the email";
+  }
+
+  // Resend as the backup
   let resendError = "RESEND_API_KEY is not set";
   const apiKey = process.env.RESEND_API_KEY;
-
   if (apiKey) {
     try {
       const { data, error } = await new Resend(apiKey).emails.send({
@@ -57,7 +65,10 @@ export async function deliverEmail(email: OutgoingEmail, source: string): Promis
         ...(email.text ? { text: email.text } : {}),
         ...(email.replyTo ? { replyTo: email.replyTo } : {}),
       });
-      if (!error) return { success: true, id: data?.id, provider: "resend" };
+      if (!error) {
+        if (sesConfigured()) console.warn(`[EMAIL] ${source}: sent through Resend (SES: ${sesError})`);
+        return { success: true, id: data?.id, provider: "resend" };
+      }
       resendError = error.message || error.name || "Resend refused the email";
       await reportResendQuota(error, source);
     } catch (error) {
@@ -65,18 +76,8 @@ export async function deliverEmail(email: OutgoingEmail, source: string): Promis
     }
   }
 
-  if (!sesConfigured()) {
-    console.error(`[EMAIL] ${source}: Resend failed and no SES backup is set up: ${resendError}`);
-    return { success: false, provider: "resend", error: resendError };
-  }
-
-  const ses = await sendViaSes({ ...email, from: sesFrom(email.from) });
-  if (ses.ok) {
-    console.warn(`[EMAIL] ${source}: sent through Amazon SES (Resend: ${resendError})`);
-    return { success: true, id: ses.messageId, provider: "ses" };
-  }
-  console.error(`[EMAIL] ${source}: Resend and SES both failed. Resend: ${resendError} | ${ses.error}`);
-  return { success: false, provider: "ses", error: `Resend: ${resendError}; ${ses.error}` };
+  console.error(`[EMAIL] ${source}: SES and Resend both failed. SES: ${sesError} | Resend: ${resendError}`);
+  return { success: false, provider: apiKey ? "resend" : "ses", error: `SES: ${sesError}; Resend: ${resendError}` };
 }
 
 /** `deliverEmail` in the `{ data, error }` shape of `resend.emails.send`, for the older call sites. */
