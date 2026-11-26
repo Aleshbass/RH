@@ -24,6 +24,7 @@ import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
 import { handOverManagedProfile } from "./helpers/careCircleAccess";
 import { isOutsideRehabifyCare, isValidTimeZone } from "../lib/practiceCountries";
 import { isApproved } from "./helpers/careAccess";
+import { assertLicenceOnFile } from "./physioSetup";
 import { missingPolicies, recordMissingPolicyAcceptances } from "./helpers/policyAcceptance";
 import { PATIENT_CONSENT_POLICIES, POLICIES, PROFESSIONAL_SIGNUP_POLICIES } from "../lib/policies";
 
@@ -708,6 +709,11 @@ export const completeUserProfile = mutation({
         } catch (error) {
           console.error("[completeUserProfile] Error creating/updating physiotherapist profile:", error);
           throw error; // Re-throw to ensure the mutation fails
+        }
+        // Sending the application needs the licence (owner, 26 Nov 2026): MRTB in Nigeria, the
+        // country's own board elsewhere, with its number, expiry, the document and an ID
+        if (args.finalStep === true && args.onboardingSkipped !== true) {
+          await assertLicenceOnFile(ctx, physioProfileId);
         }
         break;
 

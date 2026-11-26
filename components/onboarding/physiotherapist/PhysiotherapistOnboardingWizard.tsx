@@ -6,7 +6,9 @@
  *   1. How you'll work  country (Nigeria by default), then Rehabify physio or independent physio
  *                       (lib/practiceModes.ts); outside Nigeria it's independent only (lib/practiceCountries.ts)
  *   2. About you        name and phone
- *   3. Your licence     board (the country's own), licence number and expiry, experience, ID and a licence document
+ *   3. Your licence     board (the country's own), licence number and expiry, experience, ID and the licence
+ *                       document itself: required (MRTB in Nigeria, the country's board elsewhere; owner, 26 Nov
+ *                       2026). A degree certificate is optional and no longer stands in for the licence.
  *   4. Your practice    where you work, what you treat, terms; then submit for review
  *
  * Both kinds of physio go through the same licence check and approval.
@@ -51,7 +53,6 @@ import {
     OTHER_COUNTRY,
     practiceCountry,
     signupTimeZone,
-    type PracticeCountry,
 } from '@/lib/practiceCountries';
 import { CountryFlag, CountryPicker } from '@/components/onboarding/common/CountryPicker';
 import { cn } from '@/lib/utils';
@@ -70,10 +71,6 @@ const STEPS = [
 
 const REFERRAL_OPTIONS = ['A colleague', 'Instagram', 'LinkedIn', 'X (Twitter)', 'Google search', 'An event or conference', 'Other'];
 // The licence is stored as "mrtbLicense" whatever the country; only its label changes
-const licenceProofs = (country: PracticeCountry): { type: PhysioDocumentType; label: string }[] => [
-    { type: 'mrtbLicense', label: country.licenceLabel },
-    { type: 'degreeCertificate', label: 'Degree certificate' },
-];
 // Licence uploads from the older application form still count as proof
 const LEGACY_LICENCE_PROOFS: PhysioDocumentType[] = ['licenseDocument', 'practicingLicense'];
 
@@ -333,7 +330,6 @@ export default function PhysiotherapistOnboardingWizard() {
     const [licenseNumber, setLicenseNumber] = useState('');
     const [expiry, setExpiry] = useState('');
     const [years, setYears] = useState('');
-    const [proofType, setProofType] = useState<PhysioDocumentType>('mrtbLicense');
     const [location, setLocation] = useState({ location: '', latitude: undefined as number | undefined, longitude: undefined as number | undefined });
     const [specializations, setSpecializations] = useState<string[]>([]);
     const [referralSource, setReferralSource] = useState('');
@@ -418,12 +414,9 @@ export default function PhysiotherapistOnboardingWizard() {
         setSpecializations(draft.specializations.length ? draft.specializations : r?.specialties ?? []);
         setReferralSource(draft.referralSource);
         setRegistryBio(r?.bio ?? '');
-        if (draft.uploadedDocumentTypes.includes('degreeCertificate') && !draft.uploadedDocumentTypes.includes('mrtbLicense')) {
-            setProofType('degreeCertificate');
-        }
-
+        // The licence itself (a degree certificate no longer stands in for it)
         const hasProof = draft.uploadedDocumentTypes.some(
-            (t) => t === 'mrtbLicense' || t === 'degreeCertificate' || LEGACY_LICENCE_PROOFS.includes(t as PhysioDocumentType)
+            (t) => t === 'mrtbLicense' || LEGACY_LICENCE_PROOFS.includes(t as PhysioDocumentType)
         );
         const aboutDone = Boolean(draft.profileId && draft.firstName && draft.lastName && draft.phoneNumber);
         const licenceDone =
@@ -434,8 +427,7 @@ export default function PhysiotherapistOnboardingWizard() {
     }, [draft, registry, registrySlug]);
 
     const uploaded = useMemo(() => new Set((documents ?? []).map((doc) => doc.documentType)), [documents]);
-    const legacyProofOnFile =
-        !uploaded.has('mrtbLicense') && !uploaded.has('degreeCertificate') && LEGACY_LICENCE_PROOFS.some((t) => uploaded.has(t));
+    const legacyProofOnFile = !uploaded.has('mrtbLicense') && LEGACY_LICENCE_PROOFS.some((t) => uploaded.has(t));
     const country = practiceCountry(countryCode);
     const countryName = countryCode === OTHER_COUNTRY ? otherCountry.trim() : country.name;
     const rehabifyAvailable = hasRehabifyCare(countryCode);
@@ -492,10 +484,10 @@ export default function PhysiotherapistOnboardingWizard() {
             const y = Number(years);
             if (years.trim() === '' || !Number.isFinite(y) || y < 0 || y > 60) e.years = 'Enter your years of experience';
             if (!uploaded.has('nationalId')) e.nationalId = 'Upload a photo or scan of your ID';
-            if (!uploaded.has('mrtbLicense') && !uploaded.has('degreeCertificate') && !legacyProofOnFile) {
+            if (!uploaded.has('mrtbLicense') && !legacyProofOnFile) {
                 // "AHPC licence" keeps its capitals; "Licence" and "State licence" read as plain words
                 const licence = /^[A-Z]{2,}/.test(country.licenceLabel) ? country.licenceLabel : country.licenceLabel.toLowerCase();
-                e.proof = `Upload your ${licence} or degree certificate`;
+                e.proof = `Upload your ${licence}. It's required to apply.`;
             }
         }
         if (step === 3) {
@@ -793,48 +785,34 @@ export default function PhysiotherapistOnboardingWizard() {
                                         />
                                         {errors.nationalId && <p className={cn(errorClass, '-mt-1 pb-2')}>{errors.nationalId}</p>}
                                     </div>
-                                    <div className="py-3">
-                                        <p className="text-sm font-medium text-neutral-900">Proof of qualification</p>
-                                        <p className="text-xs text-neutral-500">Upload whichever you have. You can add the other later.</p>
-                                        <div className="mt-2 inline-flex rounded-lg border border-neutral-200 p-0.5" role="radiogroup" aria-label="Document type">
-                                            {licenceProofs(country).map((proof) => (
-                                                <button
-                                                    key={proof.type}
-                                                    type="button"
-                                                    role="radio"
-                                                    aria-checked={proofType === proof.type}
-                                                    onClick={() => setProofType(proof.type)}
-                                                    className={cn(
-                                                        'rounded-md px-3 py-1.5 text-sm transition-colors',
-                                                        proofType === proof.type ? 'bg-neutral-900 font-medium text-white' : 'text-neutral-600 hover:text-neutral-900'
-                                                    )}
-                                                >
-                                                    {proof.label}
-                                                    {uploaded.has(proof.type) && <Check className="ml-1 inline h-3.5 w-3.5" />}
-                                                </button>
-                                            ))}
-                                        </div>
+                                    <div>
+                                        {/* The licence itself is required: MRTB in Nigeria, the country's own board elsewhere */}
                                         <DocumentRow
-                                            type={proofType}
+                                            type="mrtbLicense"
                                             required
                                             documents={documents ?? []}
-                                            onUpload={uploadDoc(proofType)}
-                                            {...(proofType === 'mrtbLicense' && countryCode !== DEFAULT_COUNTRY_CODE
-                                                ? {
-                                                      title: country.licenceLabel,
-                                                      hint: country.board
-                                                          ? `Your current licence or registration from the ${country.board.replace(/\s*\([^)]*\)$/, '')}`
-                                                          : 'Your current licence or registration to practise',
-                                                  }
-                                                : {})}
+                                            onUpload={uploadDoc('mrtbLicense')}
+                                            title={country.licenceLabel}
+                                            hint={
+                                                country.board
+                                                    ? `Required. Your current licence or registration from the ${country.board.replace(/\s*\([^)]*\)$/, '')}`
+                                                    : 'Required. Your current licence or registration to practise'
+                                            }
                                         />
-                                        {errors.proof && <p className={cn(errorClass, '-mt-1')}>{errors.proof}</p>}
+                                        {errors.proof && <p className={cn(errorClass, '-mt-1 pb-2')}>{errors.proof}</p>}
                                         {legacyProofOnFile && (
-                                            <p className={hintClass}>
+                                            <p className={cn(hintClass, 'pb-2')}>
                                                 The licence you uploaded before is on file. Upload a newer one here if it has changed.
                                             </p>
                                         )}
                                     </div>
+                                    {/* Optional: the verification team may ask for it later */}
+                                    <DocumentRow
+                                        type="degreeCertificate"
+                                        documents={documents ?? []}
+                                        onUpload={uploadDoc('degreeCertificate')}
+                                        hint="Optional. You can add it later."
+                                    />
                                 </div>
                             </div>
                         </>

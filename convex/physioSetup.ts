@@ -13,7 +13,7 @@ import { action, internalQuery, mutation, query, type MutationCtx, type QueryCtx
 import type { Doc, Id } from "./_generated/dataModel";
 import { getService, type BookableServiceId } from "../lib/rehabify-services";
 import { NETWORK_TERMS_VERSION } from "../lib/rehabify-network-terms";
-import { isOutsideRehabifyCare, practiceSettings, type PracticeSettings } from "../lib/practiceCountries";
+import { OTHER_COUNTRY, countryCodeFromName, isOutsideRehabifyCare, practiceCountry, practiceSettings, type PracticeSettings } from "../lib/practiceCountries";
 import { loadPricingSettings } from "./helpers/rehabifyPricing";
 import { adminDisplayName, requireAdmin } from "./helpers/partnerAccess";
 import { currentUser, isApproved } from "./helpers/careAccess";
@@ -32,8 +32,32 @@ export type PhysioSetupItem = {
   required: boolean;
 };
 
-/** Documents an admin needs before review (one of the licence proofs, plus ID). */
-export const ESSENTIAL_LICENCE_DOCUMENTS = ["mrtbLicense", "degreeCertificate"] as const;
+/**
+ * The licence is required to apply (owner, 26 Nov 2026): the board's licence document (stored as
+ * "mrtbLicense" whatever the country: MRTB in Nigeria, AHPC in Ghana and so on), plus ID. A degree
+ * certificate no longer stands in for it. Licence uploads from the older form still count.
+ */
+export const ESSENTIAL_LICENCE_DOCUMENTS = ["mrtbLicense"] as const;
+export const LICENCE_DOCUMENTS = ["mrtbLicense", "licenseDocument", "practicingLicense"] as const;
+
+/** The application's licence check: number, expiry, the licence document and ID. Throws what's missing. */
+export async function assertLicenceOnFile(ctx: QueryCtx, profileId: Id<"physiotherapistProfiles">) {
+  const profile = await ctx.db.get(profileId);
+  if (!profile) throw new ConvexError("Your application wasn't found. Please start again.");
+  const code = countryCodeFromName(profile.country);
+  const licence = code === OTHER_COUNTRY ? "professional licence" : practiceCountry(code).licenceLabel;
+  const documents = await ctx.db
+    .query("physiotherapistDocuments")
+    .withIndex("by_physiotherapist_id", (q) => q.eq("physiotherapistId", profileId))
+    .collect();
+  const types = new Set<string>(documents.map((d) => d.documentType));
+  if (!profile.licenseNumber?.trim()) throw new ConvexError(`Enter your ${licence} number.`);
+  if (!profile.licenseExpiryDate) throw new ConvexError(`Enter the date your ${licence} expires.`);
+  if (!LICENCE_DOCUMENTS.some((type) => types.has(type))) {
+    throw new ConvexError(`Upload your ${licence}. It's required to apply.`);
+  }
+  if (!types.has("nationalId")) throw new ConvexError("Upload a photo or scan of your ID.");
+}
 /** Documents still owed after approval when they weren't uploaded during onboarding. */
 export const FOLLOW_UP_DOCUMENTS = ["degreeCertificate", "passportPhoto"] as const;
 
