@@ -45,6 +45,10 @@ export function Clinic2D({
   const talkingRef = useRef(talking)
   talkingRef.current = talking
   const markup = useMemo(() => sceneSvg(art), [art.character, art.pose]) // eslint-disable-line react-hooks/exhaustive-deps
+  // One object per drawing: React 19 rewrites innerHTML whenever this object changes (even with the
+  // same text), which swapped in a fresh SVG on every re-render, so the lips, eyes and phone framing
+  // were moving a detached copy and froze after the first line (owner 2026-11-26)
+  const html = useMemo(() => ({ __html: markup }), [markup])
 
   useEffect(() => {
     if (!lipsUrl) return
@@ -92,11 +96,16 @@ export function Clinic2D({
   useEffect(() => {
     const el = box.current
     if (!el) return
-    const groups = Array.from(el.querySelectorAll<SVGGElement>('[data-mouth]'))
+    const find = () => Array.from(el.querySelectorAll<SVGGElement>('[data-mouth]'))
+    let groups = find()
     let shown = 'x'
     let frame = 0
-    const show = (shape: string) => {
-      const target = shape === 'm' ? 'm' : shape
+    const show = (target: string) => {
+      // Belt and braces: if the drawing was ever replaced, pick up the new mouth
+      if (groups.length && !groups[0].isConnected) {
+        groups = find()
+        shown = ''
+      }
       if (target === shown) return
       shown = target
       for (const g of groups) g.style.display = g.dataset.mouth === target ? '' : 'none'
@@ -117,7 +126,7 @@ export function Clinic2D({
       className={cn('breathing absolute inset-0 [&>svg]:h-full [&>svg]:w-full', className)}
       style={{ ['--breath' as string]: `${breath.toFixed(2)}s` }}
       aria-hidden
-      dangerouslySetInnerHTML={{ __html: markup }}
+      dangerouslySetInnerHTML={html}
     />
   )
 }

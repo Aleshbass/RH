@@ -13,6 +13,7 @@
 import type { SimScene } from '@/lib/learn/simulation/engine'
 import { voiceUrl, type SimShare, type SimShareBeat } from '../simApi'
 import { drawTalkingFrame, easeMouth, restMouth, shapeAt, type LipTimings, type MouthGeometry, type MouthState } from '../talkingFace'
+import { withDuration } from './videoDuration'
 import { sceneSvg } from '../art2d/clinicScene'
 
 const W = 1080
@@ -712,6 +713,7 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
     // not supported: the page asks people to keep it open
   }
   recorder.start(1000)
+  const recordStart = performance.now()
   opts.onStage?.('recording')
 
   const preview = opts.preview?.getContext('2d') ?? null
@@ -755,6 +757,7 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
 
   recorder.stop()
   await stopped
+  const recordedSec = (performance.now() - recordStart) / 1000
   for (const s of sources) {
     try {
       s.stop()
@@ -767,7 +770,9 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
   if (leftPage) throw new Error('Recording stopped because the page was left. Keep this screen open until the video is done, then try again.')
   if (aborted) throw new DOMException('Stopped', 'AbortError')
   const type = mime.split(';')[0]
-  return { blob: new Blob(chunks, { type }), ext: type === 'video/mp4' ? 'mp4' : 'webm', mime: type, seconds: Math.round(total) }
+  // MediaRecorder leaves the length out (MP4 says 0, WebM says nothing): phones and TikTok showed 00:00
+  const blob = await withDuration(new Blob(chunks, { type }), recordedSec)
+  return { blob, ext: type === 'video/mp4' ? 'mp4' : 'webm', mime: type, seconds: Math.round(total) }
 }
 
 /**
