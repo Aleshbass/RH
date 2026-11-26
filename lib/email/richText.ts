@@ -2,8 +2,9 @@
  * Rich text for marketing emails. The composer's editor (Tiptap) saves the message as JSON;
  * this turns it into email-safe HTML: inline styles only (Gmail drops <style>), a table for the
  * quote (Outlook ignores borders on most blocks), escaped text, and only web, mail and phone
- * links. Older campaigns saved plain text ("blank line between paragraphs") and still render
- * the old way. Runs in Convex (the real send) and in the browser (the live preview).
+ * links. Pictures (https only) fill the width and can open a link. Older campaigns saved plain
+ * text ("blank line between paragraphs") and still render the old way. Runs in Convex (the real
+ * send) and in the browser (the live preview).
  */
 import { EMAIL_COLORS as C, escapeEmailText, paragraph } from "./layout";
 
@@ -60,16 +61,38 @@ export function bodyPlainText(body: string): string {
   return doc ? textOf(doc).replace(/\n{3,}/g, "\n\n").trim() : "";
 }
 
-/** Whether there is any message at all (an empty editor still saves a little JSON). */
-export function bodyHasText(body: string | undefined | null): boolean {
-  return Boolean(body && bodyPlainText(body).trim());
-}
-
 const safeHref = (href: unknown): string | null => {
   if (typeof href !== "string") return null;
   const value = href.trim();
   return /^(https?:\/\/|mailto:|tel:)[^\s"'<>]+$/i.test(value) ? value : null;
 };
+
+/** A picture's address, only when it's a plain https link (no data: or http: images in email). */
+export const safeImageSrc = (src: unknown): string | null => {
+  if (typeof src !== "string") return null;
+  const value = src.trim();
+  return /^https:\/\/[^\s"'<>]+$/i.test(value) ? value : null;
+};
+
+function hasPicture(node: RichNode): boolean {
+  if (node.type === "image" && safeImageSrc(node.attrs?.src)) return true;
+  return (node.content ?? []).some(hasPicture);
+}
+
+/** Whether there is any message at all: words or a picture (an empty editor still saves a little JSON). */
+export function bodyHasText(body: string | undefined | null): boolean {
+  if (!body) return false;
+  if (bodyPlainText(body).trim()) return true;
+  const doc = isRichBody(body) ? parseRichBody(body) : null;
+  return Boolean(doc && hasPicture(doc));
+}
+
+/** A full-width picture, opening `href` when it has one. Shared by the top image and pictures in the message. */
+export function emailPicture(src: string, opts: { alt?: string; href?: string | null; margin?: string } = {}): string {
+  const img = `<img src="${escapeEmailText(src)}" alt="${escapeEmailText(opts.alt ?? "")}" width="520" style="display:block;width:100%;max-width:100%;height:auto;border:0;border-radius:14px;" />`;
+  const inner = opts.href ? `<a href="${escapeEmailText(opts.href)}" target="_blank" style="display:block;text-decoration:none;">${img}</a>` : img;
+  return `<div style="margin:${opts.margin ?? "0 0 22px"};">${inner}</div>`;
+}
 
 const LINK_STYLE = `color:${C.brand};text-decoration:underline;font-weight:600;`;
 
@@ -136,6 +159,12 @@ function block(node: RichNode): string {
       const html = innerBlocks(node.content, C.ink);
       if (!html.trim()) return "";
       return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;"><tr><td style="border-left:4px solid ${C.lime};padding:4px 0 4px 18px;font-family:${FONT};font-size:18px;line-height:1.6;font-style:italic;color:${C.ink};">${html}</td></tr></table>`;
+    }
+    case "image": {
+      const src = safeImageSrc(node.attrs?.src);
+      if (!src) return "";
+      const href = safeHref(node.attrs?.href);
+      return emailPicture(src, { alt: typeof node.attrs?.alt === "string" ? node.attrs.alt : "", href: href && /^https?:/i.test(href) ? href : null });
     }
     case "horizontalRule":
       return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 26px;"><tr><td style="border-top:1px solid ${C.line};font-size:1px;line-height:1px;">&nbsp;</td></tr></table>`;

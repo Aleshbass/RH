@@ -78,6 +78,8 @@ export const marketingApi = {
   >("marketing:adminAddContacts"),
   removeContact: makeFunctionReference<"mutation", { id: Id<"marketingContacts"> }, { success: boolean }>("marketing:adminRemoveContact"),
   sendTest: makeFunctionReference<"mutation", MarketingContent, { to: string }>("marketing:adminSendTest"),
+  imageUploadUrl: makeFunctionReference<"mutation", Record<string, never>, string>("marketing:adminImageUploadUrl"),
+  imageSaved: makeFunctionReference<"mutation", { storageId: Id<"_storage"> }, { url: string }>("marketing:adminImageSaved"),
   createCampaign: makeFunctionReference<
     "mutation",
     MarketingContent & { audience: MarketingAudience; emails?: string[] },

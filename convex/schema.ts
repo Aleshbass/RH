@@ -4825,6 +4825,8 @@ export default defineSchema({
     ctaLabel: v.optional(v.string()),
     ctaUrl: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
+    // Where the top image opens when clicked
+    imageLinkUrl: v.optional(v.string()),
     audience: v.union(
       v.literal("everyone"),
       v.literal("patients"),

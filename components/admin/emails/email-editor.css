@@ -74,3 +74,22 @@
   height: 0;
   pointer-events: none;
 }
+
+/* Pictures: full width like in the email; a linked one shows a green edge */
+.email-editor img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.email-editor img[data-href] {
+  box-shadow: 0 0 0 2px rgba(0, 205, 15, 0.35);
+}
+
+.email-editor img.ProseMirror-selectednode {
+  outline: 3px solid #00cd0f;
+  outline-offset: 2px;
+}

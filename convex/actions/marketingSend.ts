@@ -73,6 +73,7 @@ function contentOf(c: Doc<"marketingCampaigns">): MarketingContent {
     ctaLabel: c.ctaLabel,
     ctaUrl: c.ctaUrl,
     imageUrl: c.imageUrl,
+    imageLinkUrl: c.imageLinkUrl,
     greetBy: c.greetBy,
   };
 }
@@ -177,6 +178,7 @@ export const sendTest = internalAction({
     ctaLabel: v.optional(v.string()),
     ctaUrl: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
+    imageLinkUrl: v.optional(v.string()),
     greetBy: v.optional(v.union(v.literal("first_name"), v.literal("clinic_name"), v.literal("none"))),
   },
   handler: async (_ctx, args) => {

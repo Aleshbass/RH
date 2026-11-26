@@ -238,6 +238,8 @@ export const ADMIN_FUNCTION_PAGES: Readonly<Record<string, readonly number[] | "
   "marketing:adminCampaignDetail": [63],
   "marketing:adminCreateCampaign": [63],
   "marketing:adminFindPeople": [63],
+  "marketing:adminImageSaved": [63],
+  "marketing:adminImageUploadUrl": [63],
   "marketing:adminListCampaigns": [63],
   "marketing:adminListContacts": [63],
   "marketing:adminOverview": [63],

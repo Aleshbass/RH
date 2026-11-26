@@ -4,7 +4,7 @@
  * what people get. Everything typed by the admin is escaped.
  */
 import { actions, button, displayName, escapeEmailText, greeting, renderEmail } from "./layout";
-import { renderEmailBody } from "./richText";
+import { emailPicture, renderEmailBody, safeImageSrc } from "./richText";
 
 export type MarketingContent = {
   subject: string;
@@ -14,6 +14,8 @@ export type MarketingContent = {
   ctaLabel?: string;
   ctaUrl?: string;
   imageUrl?: string;
+  /** Where the top image opens when clicked (optional) */
+  imageLinkUrl?: string;
   /** Who "Hello …," names: the person's first name (the default), their clinic's name, or nobody */
   greetBy?: GreetBy;
 };
@@ -78,9 +80,8 @@ export function renderMarketingEmail(
 }
 
 function renderMarketingHtml(content: MarketingContent, opts: { greetingName?: string; unsubscribeUrl?: string }): string {
-  const image = isHttps(content.imageUrl)
-    ? `<img src="${escapeEmailText(content.imageUrl!.trim())}" alt="" width="520" style="display:block;width:100%;max-width:100%;height:auto;border:0;border-radius:16px;margin:0 0 24px;" />`
-    : "";
+  const imageSrc = safeImageSrc(content.imageUrl);
+  const image = imageSrc ? emailPicture(imageSrc, { href: isHttps(content.imageLinkUrl) ? content.imageLinkUrl!.trim() : null, margin: "0 0 24px" }) : "";
   // Rich text from the editor, or plain text from older campaigns (lib/email/richText.ts)
   const paragraphs = renderEmailBody(content.body);
   const cta =

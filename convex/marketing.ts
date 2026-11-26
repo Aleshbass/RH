@@ -31,6 +31,7 @@ type Content = {
   ctaLabel?: string;
   ctaUrl?: string;
   imageUrl?: string;
+  imageLinkUrl?: string;
   greetBy?: GreetBy;
 };
 /** The test email and the composer preview name this clinic when an email uses the clinic name */
@@ -57,6 +58,7 @@ const content = {
   ctaLabel: v.optional(v.string()),
   ctaUrl: v.optional(v.string()),
   imageUrl: v.optional(v.string()),
+  imageLinkUrl: v.optional(v.string()),
   greetBy: v.optional(v.union(v.literal("first_name"), v.literal("clinic_name"), v.literal("none"))),
 };
 
@@ -85,13 +87,16 @@ function cleanContent(args: Content) {
     ctaLabel: clean(args.ctaLabel, 60) || undefined,
     ctaUrl: clean(args.ctaUrl, 500) || undefined,
     imageUrl: clean(args.imageUrl, 500) || undefined,
+    // Only kept with an image to click
+    imageLinkUrl: (clean(args.imageUrl, 500) && clean(args.imageLinkUrl, 500)) || undefined,
     greetBy: args.greetBy && args.greetBy !== "first_name" ? args.greetBy : undefined,
   };
   if (!out.subject || !out.heading || !bodyHasText(out.body)) throw new ConvexError("Add a subject, a heading and a message.");
   if (out.body.length > (isRichBody(out.body) ? 120_000 : 10_000)) throw new ConvexError("The message is too long. Shorten it or split it into two emails.");
   if (out.ctaUrl && !/^https:\/\//i.test(out.ctaUrl)) throw new ConvexError("The button link must start with https://");
   if (out.ctaUrl && !out.ctaLabel) throw new ConvexError("Give the button a label, or remove its link.");
-  if (out.imageUrl && !/^https:\/\//i.test(out.imageUrl)) throw new ConvexError("The image link must start with https://");
+  if (out.imageUrl && !/^https:\/\//i.test(out.imageUrl)) throw new ConvexError("The image address must start with https://");
+  if (out.imageLinkUrl && !/^https:\/\//i.test(out.imageLinkUrl)) throw new ConvexError("The link the image opens must start with https://");
   return out;
 }
 
@@ -358,6 +363,41 @@ export const adminFindPeople = query({
       }
     }
     return matches;
+  },
+});
+
+// Pictures for campaigns, kept in Convex file storage. PNG, JPG and GIF only: some email apps
+// (Outlook on Windows among them) can't show WebP or SVG.
+const EMAIL_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif"]);
+const EMAIL_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+/** The composer: a one-time address to upload a picture to. */
+export const adminImageUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx, "marketing:adminImageUploadUrl");
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+/** After an upload: checks it's a picture every email app can show, and gives its public link. */
+export const adminImageSaved = mutation({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, "marketing:adminImageSaved");
+    const file = await ctx.db.system.get(args.storageId);
+    if (!file) throw new ConvexError("The picture didn't arrive. Try again.");
+    if (!EMAIL_IMAGE_TYPES.has(file.contentType ?? "")) {
+      await ctx.storage.delete(args.storageId);
+      throw new ConvexError("Use a PNG, JPG or GIF picture. Some email apps can't show other kinds.");
+    }
+    if (file.size > EMAIL_IMAGE_MAX_BYTES) {
+      await ctx.storage.delete(args.storageId);
+      throw new ConvexError("Pictures can be up to 5 MB. Make it smaller and try again.");
+    }
+    const url = await ctx.storage.getUrl(args.storageId);
+    if (!url) throw new ConvexError("The picture didn't save. Try again.");
+    return { url };
   },
 });
 

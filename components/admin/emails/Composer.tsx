@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { toast } from 'sonner'
-import { Loader2, Search, X } from '@/components/icons'
+import { Loader2, Search, Upload, X } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,12 +21,13 @@ import {
 } from '@/lib/email/marketing'
 import { bodyHasText } from '@/lib/email/richText'
 import { EmailBodyEditor } from './EmailBodyEditor'
+import { EMAIL_IMAGE_ACCEPT, uploadErrorText, useEmailImageUpload } from './useEmailImageUpload'
 import { marketingApi, type MarketingOverview } from '@/lib/marketingApi'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 
 const AUDIENCES: MarketingAudience[] = ['everyone', 'patients', 'physiotherapists', 'clinics', 'partners', 'contacts', 'individual']
-const EMPTY: MarketingContent = { subject: '', previewText: '', heading: '', body: '', ctaLabel: '', ctaUrl: '', imageUrl: '' }
+const EMPTY: MarketingContent = { subject: '', previewText: '', heading: '', body: '', ctaLabel: '', ctaUrl: '', imageUrl: '', imageLinkUrl: '' }
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const labelClass = 'text-sm font-medium text-rh-ink dark:text-white'
@@ -67,6 +68,23 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
   const [testing, setTesting] = useState(false)
   // Bumped after a send so the message editor starts empty again
   const [editorKey, setEditorKey] = useState(0)
+  const uploadImage = useEmailImageUpload()
+  const imageInput = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const pickTopImage = async (file: File | undefined) => {
+    if (!file) return
+    setUploading(true)
+    try {
+      const url = await uploadImage(file)
+      setContent((c) => ({ ...c, imageUrl: url }))
+      toast.success('Picture added at the top of the email.')
+    } catch (error) {
+      toast.error(uploadErrorText(error))
+    } finally {
+      setUploading(false)
+      if (imageInput.current) imageInput.current.value = ''
+    }
+  }
 
   const q = useDebounced(search.trim())
   const people = useQuery(marketingApi.findPeople, audience === 'individual' && q.length >= 2 ? { q } : 'skip')
@@ -116,6 +134,7 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
     ctaLabel: content.ctaLabel || undefined,
     ctaUrl: content.ctaUrl || undefined,
     imageUrl: content.imageUrl || undefined,
+    imageLinkUrl: (content.imageUrl && content.imageLinkUrl) || undefined,
     ...(greetBy !== 'first_name' ? { greetBy } : {}),
   })
 
@@ -321,9 +340,41 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="mk-image" className={labelClass}>Image link <span className="font-normal text-neutral-400">(optional)</span></Label>
-            <Input id="mk-image" inputMode="url" value={content.imageUrl} onChange={(e) => set('imageUrl')(e.target.value)} placeholder="https://… (shown above the message)" className={inputClass} />
+            <Label htmlFor="mk-image" className={labelClass}>Picture at the top <span className="font-normal text-neutral-400">(optional)</span></Label>
+            <div className="flex gap-2">
+              <Input
+                id="mk-image"
+                inputMode="url"
+                value={content.imageUrl}
+                onChange={(e) => set('imageUrl')(e.target.value)}
+                placeholder="Upload one, or paste a link: https://…"
+                className={cn(inputClass, 'min-w-0 flex-1')}
+              />
+              <input ref={imageInput} type="file" accept={EMAIL_IMAGE_ACCEPT} className="hidden" onChange={(e) => pickTopImage(e.target.files?.[0])} />
+              <Button type="button" variant="ghost" onClick={() => imageInput.current?.click()} disabled={uploading} className={cn(softButtonClass, 'shrink-0 gap-1.5')}>
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Upload
+              </Button>
+              {content.imageUrl ? (
+                <Button type="button" variant="ghost" aria-label="Remove the picture" onClick={() => setContent((c) => ({ ...c, imageUrl: '', imageLinkUrl: '' }))} className={cn(softButtonClass, 'shrink-0 px-3')}>
+                  <X className="h-4 w-4" />
+                </Button>
+              ) : null}
+            </div>
+            <p className={hintClass}>PNG, JPG or GIF, up to 5 MB. Pictures can also go anywhere in the message: use the picture button above it.</p>
           </div>
+          {content.imageUrl ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="mk-image-link" className={labelClass}>When someone clicks the picture, open <span className="font-normal text-neutral-400">(optional)</span></Label>
+              <Input
+                id="mk-image-link"
+                inputMode="url"
+                value={content.imageLinkUrl}
+                onChange={(e) => set('imageLinkUrl')(e.target.value)}
+                placeholder="https://physioaroundme.com/…"
+                className={inputClass}
+              />
+            </div>
+          ) : null}
         </section>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
