@@ -103,9 +103,9 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
           greetBy,
         },
         // Previewed with sample names; each person gets their own ("Hello there," when it isn't known)
-        { greetingName: SAMPLE.firstName, unsubscribeUrl: audience === 'individual' || namesClinic ? undefined : '#', merge: SAMPLE }
+        { greetingName: SAMPLE.firstName, unsubscribeUrl: '#', merge: SAMPLE }
       ),
-    [content, audience, hasMessage, greetBy, namesClinic]
+    [content, hasMessage, greetBy]
   )
 
   const payload = () => ({
@@ -134,13 +134,14 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
 
   const send = async () => {
     try {
-      const { recipientCount } = await createCampaign({
+      const { recipientCount, leftOut } = await createCampaign({
         ...payload(),
         audience,
         ...(audience === 'individual' ? { emails: individualEmails } : {}),
       })
       playSound('send')
-      toast.success(`Sending to ${recipientCount} ${recipientCount === 1 ? 'person' : 'people'}. Follow it under Sent.`)
+      const skipped = leftOut ? ` ${leftOut} left out: they unsubscribed or their address bounced.` : ''
+      toast.success(`Sending to ${recipientCount} ${recipientCount === 1 ? 'person' : 'people'}. Follow it under Sent.${skipped}`)
       setContent(EMPTY)
       setEditorKey((k) => k + 1)
       setPicked([])
@@ -154,8 +155,7 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
     }
   }
 
-  const overToday =
-    audience === 'individual' && overview ? Math.max(0, individualEmails.length - (overview.directDailyLimit - overview.directSentToday)) : 0
+  const overToday = overview ? Math.max(0, count - (overview.directDailyLimit - overview.directSentToday)) : 0
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
@@ -328,11 +328,9 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className={hintClass}>
-            {audience === 'individual' || namesClinic
-              ? overview
-                ? `${overview.directSentToday} of ${overview.directDailyLimit} one-to-one emails sent today. Any over the limit go out tomorrow.`
-                : ''
-              : 'Group emails go out as Resend Broadcasts. Everyone can unsubscribe in one click.'}
+            {overview
+              ? `Each person gets their own email through Amazon SES and can unsubscribe in one click. ${overview.directSentToday.toLocaleString()} of ${overview.directDailyLimit.toLocaleString()} campaign emails sent today.`
+              : ''}
           </p>
           <div className="flex shrink-0 gap-2">
             <Button
@@ -392,13 +390,12 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
         onOpenChange={setConfirming}
         title={`Send to ${count} ${count === 1 ? 'person' : 'people'}?`}
         description={
-          audience === 'individual'
-            ? overToday > 0
-              ? `${overToday} of these will go out tomorrow to stay within today's sending limit.`
-              : 'They go out within a minute.'
+          (audience === 'individual'
+            ? 'They go out within a minute.'
             : namesClinic
-              ? `"${content.subject}" goes to each clinic owner on its own, with their clinic's name filled in. It takes a minute or two.`
-              : `"${content.subject}" goes to ${AUDIENCE_LABEL[audience].toLowerCase()} as a Resend Broadcast. Large audiences take a few minutes to prepare.`
+              ? `"${content.subject}" goes to each clinic owner on its own, with their clinic's name filled in.`
+              : `"${content.subject}" goes to ${AUDIENCE_LABEL[audience].toLowerCase()}, one email per person, about 8 a second (1,000 people take about 2 minutes).`) +
+          (overToday > 0 ? ` ${overToday} will go out tomorrow to stay within today's sending limit.` : '')
         }
         confirmLabel="Send now"
         onConfirm={send}

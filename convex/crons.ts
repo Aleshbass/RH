@@ -301,4 +301,8 @@ crons.interval("outreach-inbox-check", { minutes: 15 }, internal.actions.outreac
 // renewals, retries and grace, every morning at 07:00 Lagos
 crons.daily("physio-pro-renewals", { hourUTC: 6, minuteUTC: 0 }, internal.physioPlans.sweep, {});
 
+// Campaign emails (emailSuppressions.ts): hard bounces and spam complaints from Amazon SES's
+// suppression list, so the next campaign leaves them out
+crons.interval("ses-suppressions-sync", { minutes: 30 }, internal.emailSuppressions.syncFromSes, {});
+
 export default crons;

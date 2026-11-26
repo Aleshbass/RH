@@ -38,7 +38,7 @@ function recipientState(r: MarketingRecipient): { label: string; tone: 'green' |
 
 /**
  * Right-hand drawer for one sent campaign: the email exactly as it went out, and everyone it was
- * sent to with what Resend reported back (delivered, opened, bounced).
+ * sent to with what came back (delivered, opened, clicked, bounced).
  */
 export function CampaignSheet({ campaignId, onClose }: { campaignId: Id<'marketingCampaigns'> | null; onClose: () => void }) {
   // Keep the last campaign while the drawer slides closed
@@ -184,7 +184,7 @@ function SheetBody({ data }: { data: MarketingCampaignDetail }) {
               description={
                 campaign.status === 'preparing' || campaign.status === 'sending'
                   ? 'People appear here as each group goes out.'
-                  : 'Resend hasn’t reported any deliveries for this email.'
+                  : 'No deliveries were recorded for this email.'
               }
             />
           ) : shown.length === 0 ? (
@@ -233,9 +233,7 @@ function SheetBody({ data }: { data: MarketingCampaignDetail }) {
               <iframe title="Email as sent" srcDoc={html} sandbox="" className="h-[620px] w-full rounded-xl border-0 bg-white" />
             </div>
           </div>
-          {campaign.audience !== 'individual' && (
-            <p className="mt-2 text-xs text-neutral-500">Each person saw their own first name in the greeting, and an unsubscribe link at the bottom.</p>
-          )}
+          <p className="mt-2 text-xs text-neutral-500">Each person saw their own name, and their own unsubscribe link at the bottom.</p>
         </TabsContent>
       </Tabs>
     </div>

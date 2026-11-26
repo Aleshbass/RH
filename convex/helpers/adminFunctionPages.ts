@@ -259,6 +259,7 @@ export const ADMIN_FUNCTION_PAGES: Readonly<Record<string, readonly number[] | "
   "offline:setOfflinePilot": [15, 58],
   "outcomes:adminSetFeatured": [18, 19],
   "outcomes:adminShareableFeedback": [18, 19],
+  "outreach:adminExportAllLeads": [26],
   "outreach:adminExportLeads": [26],
   "outreach:adminGuard": [26],
   "outreach:adminLeads": [26],

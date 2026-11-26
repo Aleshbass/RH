@@ -1,7 +1,11 @@
 /**
- * Email campaign tracking: Resend tells us when a campaign email is delivered, opened, clicked,
- * bounced or marked as spam (webhook, Svix-signed with RESEND_WEBHOOK_SECRET). Each counts once
- * per person per campaign on the campaign (deliveredCount, openedCount, …) for Admin › Emails.
+ * Email campaign tracking. Each event counts once per person per campaign on the campaign
+ * (deliveredCount, openedCount, …) for Admin › Emails. Where events come from:
+ *  - campaigns sent through Amazon SES (from 26 Nov 2026): "delivered" when SES takes the email
+ *    (actions/marketingSend.ts), opens and clicks from our own pixel and links (emailLinks.ts),
+ *    bounces and spam complaints from SES's suppression list (emailSuppressions.ts);
+ *  - older campaigns sent as Resend Broadcasts: Resend's webhook below (Svix-signed with
+ *    RESEND_WEBHOOK_SECRET).
  *
  * Opens come from a tracking image, so they're an estimate: Apple Mail can count opens that didn't
  * happen and some apps block images. Emails that aren't from a campaign are ignored.
@@ -13,7 +17,7 @@
  */
 import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
-import { httpAction, internalMutation } from "./_generated/server";
+import { httpAction, internalMutation, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 
 type EventType = "delivered" | "opened" | "clicked" | "bounced" | "complained";
@@ -118,17 +122,13 @@ export const resendWebhook = httpAction(async (ctx, request) => {
   return new Response("OK", { status: 200 });
 });
 
-/** Records one event once (by Svix id), counting each person once per campaign and event type. */
-export const recordEmailEvent = internalMutation({
-  args: {
-    eventId: v.string(),
-    type: v.union(v.literal("delivered"), v.literal("opened"), v.literal("clicked"), v.literal("bounced"), v.literal("complained")),
-    email: v.string(),
-    campaignId: v.optional(v.string()),
-    broadcastId: v.optional(v.string()),
-    at: v.number(),
-  },
-  handler: async (ctx, args) => {
+export type CampaignEvent = { eventId: string; type: EventType; email: string; campaignId?: string; broadcastId?: string; at: number };
+
+/**
+ * Records one event once (by its id), counting each person once per campaign and event type.
+ * A bounce takes back the "delivered" counted when SES took the email.
+ */
+export async function recordCampaignEvent(ctx: MutationCtx, args: CampaignEvent): Promise<{ counted: boolean }> {
     let campaign: Doc<"marketingCampaigns"> | null = null;
     const tagged = args.campaignId ? ctx.db.normalizeId("marketingCampaigns", args.campaignId) : null;
     if (tagged) campaign = await ctx.db.get(tagged);
@@ -157,7 +157,29 @@ export const recordEmailEvent = internalMutation({
     });
     if (already) return { counted: false };
     const field = COUNTER[args.type];
-    await ctx.db.patch(campaign._id, { [field]: (campaign[field] ?? 0) + 1 });
+    const patch: Partial<Record<(typeof COUNTER)[EventType], number>> = { [field]: (campaign[field] ?? 0) + 1 };
+    if (args.type === "bounced") {
+      const accepted = await ctx.db
+        .query("marketingEvents")
+        .withIndex("by_campaign_email_type", (q) => q.eq("campaignId", campaign!._id).eq("email", args.email).eq("type", "delivered"))
+        .first();
+      if (accepted?.eventId.startsWith("ses-sent:")) {
+        await ctx.db.delete(accepted._id);
+        patch.deliveredCount = Math.max(0, (campaign.deliveredCount ?? 0) - 1);
+      }
+    }
+    await ctx.db.patch(campaign._id, patch);
     return { counted: true };
+}
+
+export const recordEmailEvent = internalMutation({
+  args: {
+    eventId: v.string(),
+    type: v.union(v.literal("delivered"), v.literal("opened"), v.literal("clicked"), v.literal("bounced"), v.literal("complained")),
+    email: v.string(),
+    campaignId: v.optional(v.string()),
+    broadcastId: v.optional(v.string()),
+    at: v.number(),
   },
+  handler: async (ctx, args) => recordCampaignEvent(ctx, args),
 });

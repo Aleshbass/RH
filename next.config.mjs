@@ -251,11 +251,15 @@ const nextConfig = {
 
   // Rewrites
   async rewrites() {
+    // Campaign email links (unsubscribe, open pixel, tracked links) stay on our own domain and are
+    // answered by Convex (convex/emailLinks.ts)
+    const convexSite = (process.env.NEXT_PUBLIC_CONVEX_URL ?? '').replace('.convex.cloud', '.convex.site')
     return [
       {
         source: '/favicon.ico',
         destination: '/logos/favicon/favicon.ico',
       },
+      ...(convexSite.startsWith('https://') ? [{ source: '/e/:path*', destination: `${convexSite}/e/:path*` }] : []),
     ]
   },
 };

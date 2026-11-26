@@ -4,15 +4,15 @@
  * takes over whenever SES doesn't take the email: SES isn't set up, refuses it, or is down. A
  * used-up Resend quota still alerts the admins (resendQuota.ts).
  *
- * Group campaigns (convex/actions/marketingSend.ts) stay on Resend only: they rely on Resend
- * audiences, unsubscribes and open tracking.
+ * Group campaigns (convex/actions/marketingSend.ts) go through SES only, with our own unsubscribe
+ * links and open tracking (convex/emailLinks.ts); Resend's 100 a day couldn't carry them.
  *
  * Plain TypeScript, no Convex imports, never throws: usable from Convex actions and Next routes.
  * Logs carry the source and provider only, never addresses (NDPR).
  */
 import { Resend } from "resend";
 import { reportResendQuota } from "./resendQuota";
-import { sendViaSes, sesConfigured } from "./ses";
+import { sendViaSes, sesConfigured, sesFromAddress } from "./ses";
 
 export type OutgoingEmail = {
   /** `Name <address>`; the address must be on a domain verified in both Resend and SES. */
@@ -32,12 +32,7 @@ export type DeliveryResult = {
   error?: string;
 };
 
-/** The sandbox sender only works on Resend; SES needs an address on our verified domain. */
-function sesFrom(from: string): string {
-  if (!/@resend\.dev>?\s*$/i.test(from)) return from;
-  const name = /^\s*"?([^"<]*?)"?\s*</.exec(from)?.[1] || "Rehabify Health";
-  return `${name} <${process.env.SES_FROM_EMAIL || "noreply@physioaroundme.com"}>`;
-}
+const sesFrom = sesFromAddress;
 
 /**
  * Sends one email. `source` is a short label for logs and the admin quota alert

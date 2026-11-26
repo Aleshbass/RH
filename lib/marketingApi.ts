@@ -4,8 +4,11 @@ import type { MarketingAudience, MarketingContent, MarketingSegment } from "@/li
 
 export type MarketingOverview = {
   counts: Record<MarketingSegment | "everyone", number>;
+  /** Campaign emails sent today (UTC) and the day's cap */
   directSentToday: number;
   directDailyLimit: number;
+  /** Left out of every campaign: unsubscribed, bounced or marked as spam */
+  suppressedCount?: number;
 };
 
 export type MarketingCampaign = MarketingContent & {
@@ -21,12 +24,15 @@ export type MarketingCampaign = MarketingContent & {
   createdByName: string;
   createdAt: number;
   sentAt?: number;
-  // People counted once each from Resend's webhook (convex/emailEvents.ts); opens are an estimate
+  // People counted once each (convex/emailEvents.ts); opens are an estimate
   deliveredCount?: number;
   openedCount?: number;
   clickedCount?: number;
   bouncedCount?: number;
   complainedCount?: number;
+  unsubscribedCount?: number;
+  /** Sent one email at a time from the queue (every campaign since the move to Amazon SES) */
+  oneByOne?: boolean;
 };
 
 export type MarketingContact = { _id: Id<"marketingContacts">; email: string; name?: string; tags: string[]; createdAt: number };
@@ -51,7 +57,7 @@ export type MarketingRecipient = {
 export type MarketingCampaignDetail = {
   campaign: MarketingCampaign;
   recipients: MarketingRecipient[];
-  /** queue: one-to-one sends · saved: group sends · events: older group sends, from Resend's reports only */
+  /** queue: sent one by one (every campaign since SES) · saved: older Resend group sends · events: the oldest, from Resend's reports only */
   listSource: "queue" | "saved" | "events";
   truncated: boolean;
 };
@@ -71,11 +77,10 @@ export const marketingApi = {
     { added: number; skipped: number }
   >("marketing:adminAddContacts"),
   removeContact: makeFunctionReference<"mutation", { id: Id<"marketingContacts"> }, { success: boolean }>("marketing:adminRemoveContact"),
-  enableOpenTracking: makeFunctionReference<"action", Record<string, never>, { domain: string }>("actions/marketingSend:adminEnableOpenTracking"),
   sendTest: makeFunctionReference<"mutation", MarketingContent, { to: string }>("marketing:adminSendTest"),
   createCampaign: makeFunctionReference<
     "mutation",
     MarketingContent & { audience: MarketingAudience; emails?: string[] },
-    { campaignId: Id<"marketingCampaigns">; recipientCount: number }
+    { campaignId: Id<"marketingCampaigns">; recipientCount: number; leftOut?: number }
   >("marketing:adminCreateCampaign"),
 };

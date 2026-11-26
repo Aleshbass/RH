@@ -20,14 +20,10 @@ export type MarketingContent = {
 
 export type GreetBy = "first_name" | "clinic_name" | "none";
 
-/** Resend fills these in per contact when it sends a Broadcast. */
-export const RESEND_UNSUBSCRIBE_URL = "{{{RESEND_UNSUBSCRIBE_URL}}}";
-export const RESEND_FIRST_NAME = "{{{FIRST_NAME|there}}}";
-
 /**
- * Tags an admin can type anywhere in the subject, heading or message; each email gets its own.
- * Resend Broadcasts only know first names, so an email naming the clinic is sent one by one
- * (convex/marketing.ts), and only to clinics or chosen people.
+ * Tags an admin can type anywhere in the subject, heading or message; each email gets its own
+ * (every campaign goes one email per person through Amazon SES). The clinic name is only known
+ * for clinic owners, so it works when sending to Clinics or to chosen people (convex/marketing.ts).
  */
 export const MERGE_TAGS = { firstName: "{first_name}", clinicName: "{clinic_name}" } as const;
 const FIRST_NAME_TAG = /\{\s*first[_ ]name\s*\}/gi;
@@ -58,15 +54,15 @@ const isHttps = (url?: string) => !!url && /^https:\/\/[^\s"'<>]+$/i.test(url.tr
 export function renderMarketingEmail(
   content: MarketingContent,
   opts: {
-    /** Plain name, or RESEND_FIRST_NAME for Broadcasts */
+    /** The person's first name ("Hello there," when it isn't known) */
     greetingName?: string;
-    /** Broadcasts pass RESEND_UNSUBSCRIBE_URL; one-to-one emails have no list to leave */
+    /** This person's unsubscribe link (convex/helpers/emailLinks.ts); "#" in previews and tests */
     unsubscribeUrl?: string;
-    /** Fills {first_name} / {clinic_name}: this person's values, or "resend" for a Broadcast */
-    merge?: MergeValues | "resend";
+    /** Fills {first_name} / {clinic_name} with this person's values */
+    merge?: MergeValues;
   } = {}
 ): string {
-  const merge = opts.merge === "resend" ? null : opts.merge;
+  const merge = opts.merge;
   const greetingName =
     content.greetBy === "none"
       ? undefined
@@ -74,9 +70,8 @@ export function renderMarketingEmail(
         ? merge?.clinicName?.trim() || opts.greetingName
         : opts.greetingName;
   const html = renderMarketingHtml(content, { ...opts, greetingName });
-  if (!opts.merge) return html;
+  if (!merge) return html;
   // Tags are plain text in the admin's words, so they appear in the HTML as typed
-  if (opts.merge === "resend") return html.replace(FIRST_NAME_TAG, () => RESEND_FIRST_NAME).replace(CLINIC_NAME_TAG, () => "your clinic");
   return html
     .replace(FIRST_NAME_TAG, () => escapeEmailText(merge?.firstName?.trim() ? displayName(merge.firstName) : "there"))
     .replace(CLINIC_NAME_TAG, () => escapeEmailText(merge?.clinicName?.trim() || "your clinic"));
@@ -92,10 +87,7 @@ function renderMarketingHtml(content: MarketingContent, opts: { greetingName?: s
     content.ctaLabel?.trim() && isHttps(content.ctaUrl)
       ? actions(button(escapeEmailText(content.ctaLabel.trim()), escapeEmailText(content.ctaUrl!.trim())))
       : "";
-  // The Resend placeholder must stay unescaped so Resend can replace it
-  const hello = opts.greetingName
-    ? greeting(opts.greetingName === RESEND_FIRST_NAME ? RESEND_FIRST_NAME : escapeEmailText(opts.greetingName))
-    : "";
+  const hello = opts.greetingName ? greeting(escapeEmailText(opts.greetingName)) : "";
 
   return renderEmail({
     title: escapeEmailText(content.heading),
@@ -103,7 +95,7 @@ function renderMarketingHtml(content: MarketingContent, opts: { greetingName?: s
     body: image + hello + paragraphs + cta,
     safetyNote: false,
     footerNote: opts.unsubscribeUrl
-      ? `You're receiving this because you're part of the Rehabify community. <a href="${opts.unsubscribeUrl}" style="color:#ffffff;text-decoration:underline;">Unsubscribe</a>`
+      ? `You're receiving this because you're part of the Rehabify community. <a href="${escapeEmailText(opts.unsubscribeUrl)}" style="color:#ffffff;text-decoration:underline;">Unsubscribe</a>`
       : "You're receiving this email from Rehabify Health.",
   });
 }
@@ -111,7 +103,7 @@ function renderMarketingHtml(content: MarketingContent, opts: { greetingName?: s
 export type MarketingAudience = "everyone" | "patients" | "physiotherapists" | "clinics" | "partners" | "contacts" | "individual";
 export type MarketingSegment = Exclude<MarketingAudience, "everyone" | "individual">;
 
-/** "Everyone" is sent as one Broadcast per segment, in this order, each person in only one. */
+/** "Everyone" is queued segment by segment, in this order, each person only once. */
 export const MARKETING_SEGMENTS: MarketingSegment[] = ["patients", "physiotherapists", "clinics", "partners", "contacts"];
 
 export const AUDIENCE_LABEL: Record<MarketingAudience, string> = {

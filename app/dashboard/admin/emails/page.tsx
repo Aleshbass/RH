@@ -2,7 +2,7 @@
 
 import { Suspense, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useAction, useMutation, useQuery } from 'convex/react'
+import { useMutation, useQuery } from 'convex/react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
 import { Loader2, Mail, Search, Users } from '@/components/icons'
@@ -20,7 +20,6 @@ import {
   PageHeader,
   Panel,
   primaryButtonClass,
-  softButtonClass,
   StatusBadge,
   tabsListClass,
 } from '@/components/admin/ui'
@@ -37,19 +36,19 @@ type QuotaStatus = { sesBackup?: boolean; today: { kind: 'daily' | 'monthly'; fi
 // A plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
 const quotaStatusRef = makeFunctionReference<'query', Record<string, never>, QuotaStatus>('emailQuota:getQuotaStatus')
 
-/** Resend refused emails today because the plan's quota is used up (convex/emailQuota.ts). */
+/** Resend (now only the backup sender) refused emails today because its quota is used up (convex/emailQuota.ts). */
 function QuotaNotice() {
   const status = useQuery(quotaStatusRef, {})
   const hit = status?.today[0]
   if (!hit) return null
-  // Platform emails switch to Amazon SES when Resend runs out (lib/email/deliver.ts); group emails don't
+  // Amazon SES sends first (lib/email/deliver.ts); campaigns go through SES only
   if (status?.sesBackup) {
     return (
       <p className="rounded-2xl bg-rh-warn-soft px-4 py-3 text-sm text-rh-warn-ink">
-        <strong>Resend&apos;s {hit.kind} limit is used up. Amazon SES is sending instead.</strong>{' '}
+        <strong>Resend&apos;s {hit.kind} limit is used up.</strong>{' '}
         {hit.kind === 'daily'
-          ? `Today's 100 Resend emails ran out at ${format(hit.firstAt, 'h:mm a')}. Receipts, approvals and reminders are going out through Amazon SES (the backup) until Resend resets at 1:00 am Lagos time. Group emails below still need Resend. Upgrade Resend to Pro to stop this.`
-          : 'Platform emails are going out through Amazon SES (the backup). Group emails below need Resend, so they wait until it resets or the plan is upgraded.'}
+          ? `Resend, the backup sender, ran out at ${format(hit.firstAt, 'h:mm a')}. Amazon SES sends everything, so emails and campaigns still go out; only the backup is off until Resend resets at 1:00 am Lagos time.`
+          : 'Resend, the backup sender, is out for this month. Amazon SES sends everything, so emails and campaigns still go out.'}
       </p>
     )
   }
@@ -76,11 +75,11 @@ const STATUS: Record<MarketingCampaign['status'], { label: string; tone: 'amber'
 
 function campaignProgress(c: MarketingCampaign) {
   if (c.status === 'sent') return `Sent to ${c.sentCount} ${c.sentCount === 1 ? 'person' : 'people'}`
-  if (c.audience === 'individual') {
+  if (c.status === 'preparing') return `${c.recipientCount} people · getting the list ready`
+  if (c.audience === 'individual' || c.oneByOne) {
     const waiting = c.pendingCount
     return `${c.sentCount} of ${c.recipientCount} sent${waiting > 0 ? ` · ${waiting} waiting` : ''}${c.failedCount ? ` · ${c.failedCount} failed` : ''}`
   }
-  if (c.status === 'preparing' || c.status === 'sending') return `${c.recipientCount} people · preparing the audience in Resend`
   return `${c.sentCount} of ${c.recipientCount} sent`
 }
 
@@ -100,7 +99,7 @@ function parseContacts(text: string) {
     })
 }
 
-/** "Delivered 120 · Opened 54 (45%) · Bounced 2", once Resend has reported anything. */
+/** "Delivered 120 · Opened 54 (45%) · Bounced 2", once anything is counted. */
 function trackingLine(c: MarketingCampaign) {
   const delivered = c.deliveredCount ?? 0
   const opened = c.openedCount ?? 0
@@ -112,43 +111,23 @@ function trackingLine(c: MarketingCampaign) {
     c.clickedCount ? `Clicked ${c.clickedCount}` : null,
     c.bouncedCount ? `Bounced ${c.bouncedCount}` : null,
     c.complainedCount ? `Marked as spam ${c.complainedCount}` : null,
+    c.unsubscribedCount ? `Unsubscribed ${c.unsubscribedCount}` : null,
   ]
   return parts.filter(Boolean).join(' · ')
 }
 
-/** Switch on open tracking in Resend, and where its webhook should point. */
+/** How opens, clicks, bounces and unsubscribes are counted since campaigns moved to Amazon SES. */
 function TrackingSetup() {
-  const enable = useAction(marketingApi.enableOpenTracking)
-  const [busy, setBusy] = useState(false)
-  const site = (process.env.NEXT_PUBLIC_CONVEX_URL ?? '').replace('.convex.cloud', '.convex.site')
-  const webhookUrl = site ? `${site}/resend/webhook` : '/resend/webhook'
+  const overview = useQuery(marketingApi.overview, {})
+  const left = overview?.suppressedCount ?? 0
   return (
-    <div className="flex flex-col gap-3 border-b border-black/[0.05] px-5 py-4 dark:border-white/[0.06] sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0 text-xs text-neutral-600 dark:text-neutral-300">
-        <p className="text-sm font-semibold text-rh-ink dark:text-white">Opens and deliveries</p>
-        <p className="mt-0.5">
-          Counted per person from Resend. Opens are an estimate (some apps block images, Apple Mail can over-count). Resend sends events to{' '}
-          <span className="break-all font-mono">{webhookUrl}</span>.
-        </p>
-      </div>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true)
-          try {
-            const res = await enable({})
-            toast.success(`Open tracking is on for ${res.domain}`)
-          } catch (error) {
-            toast.error(error instanceof Error ? error.message.replace(/^.*Uncaught Error:\s*/, '') : 'Couldn’t switch it on.')
-          } finally {
-            setBusy(false)
-          }
-        }}
-        className={cn(softButtonClass, 'h-9 shrink-0')}
-      >
-        Turn on open tracking
-      </button>
+    <div className="border-b border-black/[0.05] px-5 py-4 text-xs text-neutral-600 dark:border-white/[0.06] dark:text-neutral-300">
+      <p className="text-sm font-semibold text-rh-ink dark:text-white">Opens, clicks and unsubscribes</p>
+      <p className="mt-0.5">
+        Every email goes through Amazon SES with its own unsubscribe link. Delivered means SES took the email; a hard bounce later takes it back.
+        Opens are an estimate (some apps block images, Apple Mail can over-count).
+        {left > 0 ? ` ${left} ${left === 1 ? 'person has' : 'people have'} unsubscribed, bounced or marked an email as spam, so campaigns leave them out.` : ''}
+      </p>
     </div>
   )
 }
@@ -264,7 +243,7 @@ function ContactsPanel() {
           {adding && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Add {parsed.length > 0 ? parsed.length : ''} {parsed.length === 1 ? 'contact' : 'contacts'}
         </Button>
-        <p className="text-xs text-neutral-500">People who unsubscribe from an email are handled by Resend and won&apos;t get group emails again.</p>
+        <p className="text-xs text-neutral-500">People who unsubscribe, or whose address bounces, are left out of every email after that.</p>
       </section>
 
       <Panel>

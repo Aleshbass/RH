@@ -8,13 +8,21 @@ import {
 import { readResolvePhysiotherapist, readFindMatches, readAvailability, readBooking, operationalQuery, operationalMutation, upsertIntake, recordJourneyEvent, issueDashboardLink, placeForPin, programmeWatchLink } from "./joyGateway";
 import { rpc as partnerGatewayRpc } from "./partnerGateway";
 import { resendWebhook } from "./emailEvents";
+import { clickLink, openPixel, unsubscribeLink } from "./emailLinks";
 import { quotaHit as emailQuotaHit } from "./emailQuota";
 import { videoKey, videoMaster, videoMedia, videoPreflight, workerClaim, workerComplete, workerCreate, workerFail, workerUploadUrls } from "./learnVideo";
 
 const http = httpRouter();
 
-// Resend: campaign email delivered / opened / clicked / bounced / spam (Svix-signed)
+// Resend: delivered / opened / clicked / bounced / spam for older campaigns (Svix-signed)
 http.route({ path: "/resend/webhook", method: "POST", handler: resendWebhook });
+// Campaign emails sent through SES (emailLinks.ts; physioaroundme.com/e/* is passed on here by
+// next.config.mjs): unsubscribe (GET asks to confirm, POST unsubscribes, incl. one-click), open
+// pixel, tracked link
+http.route({ path: "/e/u", method: "GET", handler: unsubscribeLink });
+http.route({ path: "/e/u", method: "POST", handler: unsubscribeLink });
+http.route({ path: "/e/o", method: "GET", handler: openPixel });
+http.route({ path: "/e/c", method: "GET", handler: clickLink });
 http.route({ path: "/email/quota-hit", method: "POST", handler: emailQuotaHit });
 
 // Partner REST API → Convex bridge (HMAC-signed, fixed operation allowlist).

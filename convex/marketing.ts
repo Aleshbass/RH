@@ -1,14 +1,16 @@
 /**
  * Marketing emails (Admin › Email campaigns).
  *
- * Group audiences (everyone, patients, physiotherapists, clinics, partners, added contacts) are sent
- * as Resend Broadcasts: they don't count against the Resend free plan's 100 transactional emails a
- * day, Resend handles unsubscribes, and the free plan covers up to 1,000 contacts a month. Each
- * segment has its own Resend audience, kept in sync in small throttled chunks before sending.
+ * Since 26 Nov 2026 (owner: "move campaigns to SES") every campaign goes through Amazon SES, one
+ * email per person from marketingQueue, so each person gets their own name (subject included),
+ * their own unsubscribe link and an open pixel (convex/emailLinks.ts). A group campaign
+ * ("preparing") first fills the queue segment by segment (everyone, patients, physiotherapists,
+ * clinics, partners, added contacts); "one person or a few" is queued at once.
  *
- * "One person or a few" uses the normal sending API through a queue, in batches, capped per UTC
- * day (MARKETING_DIRECT_DAILY_LIMIT, default 50) so marketing never crowds out appointment emails.
- * The sending itself happens in actions/marketingSend.ts.
+ * People who unsubscribed, hard-bounced or marked an email as spam (emailSuppressions) are left
+ * out. Campaign emails per UTC day stop at MARKETING_DAILY_LIMIT (default 20,000 of SES's 50,000);
+ * the rest wait for the next day. The sending itself happens in actions/marketingSend.ts.
+ * Older group campaigns were Resend Broadcasts; their records stay as they were.
  */
 import { ConvexError, v } from "convex/values";
 import { makeFunctionReference } from "convex/server";
@@ -17,7 +19,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { requireAdmin } from "./helpers/partnerAccess";
 import { partnerApprovalStatus } from "./helpers/partnerShared";
 import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
-import { MARKETING_SEGMENTS, subjectHasMergeTag, usesClinicName, type GreetBy, type MarketingSegment } from "../lib/email/marketing";
+import { MARKETING_SEGMENTS, usesClinicName, type GreetBy, type MarketingSegment } from "../lib/email/marketing";
 import { bodyHasText, isRichBody } from "../lib/email/richText";
 
 type Recipient = { email: string; name?: string; clinicName?: string };
@@ -46,7 +48,6 @@ const audience = v.union(
   v.literal("contacts"),
   v.literal("individual")
 );
-const segment = v.union(v.literal("patients"), v.literal("physiotherapists"), v.literal("clinics"), v.literal("partners"), v.literal("contacts"));
 
 const content = {
   subject: v.string(),
@@ -67,7 +68,9 @@ const sendTestRef = makeFunctionReference<"action", { to: string; name?: string;
   "actions/marketingSend:sendTest"
 );
 const utcDay = (ms = Date.now()) => new Date(ms).toISOString().slice(0, 10);
-const directDailyLimit = () => Math.max(1, Number(process.env.MARKETING_DIRECT_DAILY_LIMIT) || 50);
+const directDailyLimit = () => Math.max(1, Number(process.env.MARKETING_DAILY_LIMIT) || 20_000);
+/** Rows written per run while a group campaign's queue is filled */
+const FILL_CHUNK = 1500;
 const clean = (value: string | undefined, max: number) => (value ?? "").trim().slice(0, max);
 const normalEmail = (email: string | undefined | null) => (email ?? "").trim().toLowerCase();
 const usable = (email: string) => EMAIL_RE.test(email) && !isJoyLoginEmail(email);
@@ -106,9 +109,14 @@ async function clinicNameOf(ctx: QueryCtx, user: Doc<"users"> | null) {
   return clinic?.name?.trim() || undefined;
 }
 
-/** Clinic owners, each with their clinic's name: the Clinics group sent one by one. */
-async function clinicRecipients(ctx: QueryCtx): Promise<Recipient[]> {
-  const seen = new Set<string>();
+/** Addresses campaigns leave out: unsubscribed, hard-bounced or marked as spam. */
+async function blockedEmails(ctx: QueryCtx): Promise<Set<string>> {
+  return new Set((await ctx.db.query("emailSuppressions").collect()).map((row) => row.email));
+}
+
+/** Clinic owners, each with their clinic's name: the Clinics group when the email names the clinic. */
+async function clinicRecipients(ctx: QueryCtx, blocked: Set<string>): Promise<Recipient[]> {
+  const seen = new Set<string>(blocked);
   const out: Recipient[] = [];
   const owners = await ctx.db.query("users").withIndex("by_role", (q) => q.eq("role", "clinic_owner")).collect();
   for (const owner of owners) {
@@ -120,9 +128,12 @@ async function clinicRecipients(ctx: QueryCtx): Promise<Recipient[]> {
   return out;
 }
 
-/** Everyone in a segment with a deliverable email. Deleted accounts and Joy placeholder logins are left out. */
-async function segmentRecipients(ctx: QueryCtx, seg: MarketingSegment): Promise<Recipient[]> {
-  const seen = new Set<string>();
+/**
+ * Everyone in a segment with a deliverable email. Deleted accounts, Joy placeholder logins and
+ * anyone in `blocked` (unsubscribed, bounced, complained) are left out.
+ */
+async function segmentRecipients(ctx: QueryCtx, seg: MarketingSegment, blocked: Set<string>): Promise<Recipient[]> {
+  const seen = new Set<string>(blocked);
   const out: Recipient[] = [];
   const push = (email: string | undefined | null, name?: string) => {
     const e = normalEmail(email);
@@ -160,11 +171,11 @@ async function segmentRecipients(ctx: QueryCtx, seg: MarketingSegment): Promise<
   return out;
 }
 
-async function segmentCounts(ctx: QueryCtx) {
+async function segmentCounts(ctx: QueryCtx, blocked: Set<string>) {
   const counts = {} as Record<MarketingSegment, number>;
   const everyone = new Set<string>();
   for (const seg of MARKETING_SEGMENTS) {
-    const list = await segmentRecipients(ctx, seg);
+    const list = await segmentRecipients(ctx, seg, blocked);
     counts[seg] = list.length;
     for (const r of list) everyone.add(r.email);
   }
@@ -178,10 +189,13 @@ export const adminOverview = query({
   handler: async (ctx) => {
     await requireAdmin(ctx, "marketing:adminOverview");
     const usage = await ctx.db.query("marketingDailyUsage").withIndex("by_day", (q) => q.eq("day", utcDay())).first();
+    const blocked = await blockedEmails(ctx);
     return {
-      counts: await segmentCounts(ctx),
+      counts: await segmentCounts(ctx, blocked),
       directSentToday: usage?.count ?? 0,
       directDailyLimit: directDailyLimit(),
+      // Left out of every campaign: unsubscribed, bounced or marked as spam
+      suppressedCount: blocked.size,
     };
   },
 });
@@ -244,7 +258,7 @@ export const adminCampaignDetail = query({
           .query("marketingQueue")
           .withIndex("by_campaign_and_status", (q) => q.eq("campaignId", campaign._id).eq("status", status))
           .take(DETAIL_LIMIT);
-        rows.push(...queued.map((r) => ({ email: r.email, name: r.name, status, error: r.lastError, sentAt: r.sentAt })));
+        rows.push(...queued.map((r) => ({ email: r.email, name: r.name, segment: r.segment, status, error: r.lastError, sentAt: r.sentAt })));
       }
     } else {
       const saved = await ctx.db
@@ -371,24 +385,27 @@ export const adminCreateCampaign = mutation({
     const cleaned = cleanContent(args);
     const now = Date.now();
 
-    // Naming the clinic: each email goes one by one, since a Resend Broadcast only knows first names
+    // The clinic name is only known for clinic owners (and chosen people who own a clinic)
     const byClinic = usesClinicName(cleaned);
     if (byClinic && args.audience !== "clinics" && args.audience !== "individual") {
       throw new ConvexError("The clinic name only works when you send to Clinics or to people you choose.");
     }
-    const oneByOne = args.audience === "individual" || byClinic;
-    if (!oneByOne && subjectHasMergeTag(cleaned)) {
-      throw new ConvexError(
-        "Names in the subject or preview text only work when each email goes one by one (Clinics with the clinic name, or people you choose). Take the tag out of the subject."
-      );
-    }
+    const blocked = await blockedEmails(ctx);
 
     let recipientCount = 0;
+    let leftOut = 0;
     let individuals: Recipient[] = [];
+    // Group campaigns fill their queue in the background (internalFillQueue), segment by segment
+    let segmentsToSend: string[] = [];
     if (args.audience === "individual") {
-      const unique = Array.from(new Set((args.emails ?? []).map(normalEmail))).filter(usable);
-      if (unique.length === 0) throw new ConvexError("Add at least one email address.");
-      if (unique.length > MAX_INDIVIDUAL) throw new ConvexError(`Send to up to ${MAX_INDIVIDUAL} people this way, or use a group.`);
+      const chosen = Array.from(new Set((args.emails ?? []).map(normalEmail))).filter(usable);
+      if (chosen.length === 0) throw new ConvexError("Add at least one email address.");
+      if (chosen.length > MAX_INDIVIDUAL) throw new ConvexError(`Send to up to ${MAX_INDIVIDUAL} people this way, or use a group.`);
+      const unique = chosen.filter((email) => !blocked.has(email));
+      leftOut = chosen.length - unique.length;
+      if (unique.length === 0) {
+        throw new ConvexError(chosen.length === 1 ? "This person unsubscribed from Rehabify emails (or their address bounced)." : "Everyone you chose unsubscribed from Rehabify emails (or their addresses bounced).");
+      }
       individuals = await Promise.all(
         unique.map(async (email) => {
           const user = await ctx.db.query("users").withIndex("by_email", (q) => q.eq("email", email)).first();
@@ -397,21 +414,22 @@ export const adminCreateCampaign = mutation({
       );
       recipientCount = individuals.length;
     } else if (byClinic) {
-      individuals = await clinicRecipients(ctx);
+      individuals = await clinicRecipients(ctx, blocked);
       recipientCount = individuals.length;
       if (recipientCount === 0) throw new ConvexError("No clinic owner has an email address yet.");
     } else {
-      const counts = await segmentCounts(ctx);
+      const counts = await segmentCounts(ctx, blocked);
       recipientCount = counts[args.audience];
       if (recipientCount === 0) throw new ConvexError("Nobody in this audience has an email address yet.");
+      segmentsToSend = args.audience === "everyone" ? [...MARKETING_SEGMENTS] : [args.audience];
     }
 
     const campaignId = await ctx.db.insert("marketingCampaigns", {
       ...cleaned,
       audience: args.audience,
-      ...(oneByOne && args.audience !== "individual" ? { oneByOne: true } : {}),
-      status: oneByOne ? "sending" : "preparing",
-      segmentsToSend: oneByOne ? [] : args.audience === "everyone" ? [...MARKETING_SEGMENTS] : [args.audience],
+      ...(args.audience !== "individual" ? { oneByOne: true } : {}),
+      status: segmentsToSend.length > 0 ? "preparing" : "sending",
+      segmentsToSend,
       broadcastIds: [],
       recipientCount,
       sentCount: 0,
@@ -428,13 +446,14 @@ export const adminCreateCampaign = mutation({
         email: r.email,
         name: r.name,
         ...(r.clinicName ? { clinicName: r.clinicName } : {}),
+        ...(args.audience === "clinics" ? { segment: "clinics" } : {}),
         status: "pending",
         attempts: 0,
       });
     }
 
     await ctx.scheduler.runAfter(0, processCampaignRef, { campaignId });
-    return { campaignId, recipientCount };
+    return { campaignId, recipientCount, leftOut };
   },
 });
 
@@ -445,115 +464,52 @@ export const internalGetCampaign = internalQuery({
   handler: async (ctx, args) => ctx.db.get(args.campaignId),
 });
 
-export const internalAudienceId = internalQuery({
-  args: { segment },
-  handler: async (ctx, args) => {
-    const row = await ctx.db.query("marketingAudiences").withIndex("by_segment", (q) => q.eq("segment", args.segment)).first();
-    return row?.resendAudienceId ?? null;
-  },
-});
-
-export const internalSaveAudience = internalMutation({
-  args: { segment, resendAudienceId: v.string() },
-  handler: async (ctx, args) => {
-    const row = await ctx.db.query("marketingAudiences").withIndex("by_segment", (q) => q.eq("segment", args.segment)).first();
-    if (row) await ctx.db.patch(row._id, { resendAudienceId: args.resendAudienceId });
-    else await ctx.db.insert("marketingAudiences", { segment: args.segment, resendAudienceId: args.resendAudienceId, createdAt: Date.now() });
-  },
-});
-
-/** What a sync still has to do for a segment: who to add to the Resend audience and who to take out. */
-export const internalSyncPlan = internalQuery({
-  args: { segment, limit: v.number() },
-  handler: async (ctx, args) => {
-    const desired = await segmentRecipients(ctx, args.segment);
-    const members = await ctx.db.query("marketingAudienceMembers").withIndex("by_segment", (q) => q.eq("segment", args.segment)).collect();
-    const memberEmails = new Set(members.map((m) => m.email));
-    const desiredEmails = new Set(desired.map((d) => d.email));
-    const toAdd = desired.filter((d) => !memberEmails.has(d.email));
-    const toRemove = members.filter((m) => !desiredEmails.has(m.email)).map((m) => ({ email: m.email, contactId: m.resendContactId ?? null }));
-    return {
-      toAdd: toAdd.slice(0, args.limit),
-      toRemove: toRemove.slice(0, args.limit),
-      remaining: toAdd.length + toRemove.length,
-      audienceSize: desired.length,
-    };
-  },
-});
-
-export const internalRecordSync = internalMutation({
-  args: {
-    segment,
-    added: v.array(v.object({ email: v.string(), contactId: v.optional(v.string()) })),
-    removed: v.array(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    for (const a of args.added) {
-      const existing = await ctx.db
-        .query("marketingAudienceMembers")
-        .withIndex("by_segment_and_email", (q) => q.eq("segment", args.segment).eq("email", a.email))
-        .first();
-      if (!existing) await ctx.db.insert("marketingAudienceMembers", { segment: args.segment, email: a.email, resendContactId: a.contactId, syncedAt: now });
-    }
-    for (const email of args.removed) {
-      const existing = await ctx.db
-        .query("marketingAudienceMembers")
-        .withIndex("by_segment_and_email", (q) => q.eq("segment", args.segment).eq("email", email))
-        .first();
-      if (existing) await ctx.db.delete(existing._id);
-    }
-  },
-});
-
-export const internalSegmentSent = internalMutation({
-  args: { campaignId: v.id("marketingCampaigns"), segment: v.string(), broadcastId: v.string(), count: v.number() },
+/**
+ * A group campaign's next step while it is "preparing": queue the people of its first segment
+ * still to go (up to FILL_CHUNK per run, each person once per campaign), then move on. When the
+ * last segment is queued the campaign starts sending with its real count.
+ */
+export const internalFillQueue = internalMutation({
+  args: { campaignId: v.id("marketingCampaigns") },
   handler: async (ctx, args) => {
     const c = await ctx.db.get(args.campaignId);
-    if (!c) return;
-
-    // Save who this segment went to: the Resend audience as just synced, with names where we have them
-    const members = await ctx.db
-      .query("marketingAudienceMembers")
-      .withIndex("by_segment", (q) => q.eq("segment", args.segment))
-      .collect();
-    const names = new Map((await segmentRecipients(ctx, args.segment as MarketingSegment)).map((r) => [r.email, r.name]));
-    for (const m of members) {
-      const already = await ctx.db
-        .query("marketingRecipients")
-        .withIndex("by_campaign_and_email", (q) => q.eq("campaignId", c._id).eq("email", m.email))
-        .first();
-      if (!already) await ctx.db.insert("marketingRecipients", { campaignId: c._id, email: m.email, name: names.get(m.email), segment: args.segment });
+    if (!c || c.status !== "preparing") return { more: false };
+    const seg = c.segmentsToSend[0] as MarketingSegment | undefined;
+    if (seg) {
+      const queued = new Set<string>();
+      for (const status of ["pending", "sent", "failed"] as const) {
+        const rows = await ctx.db
+          .query("marketingQueue")
+          .withIndex("by_campaign_and_status", (q) => q.eq("campaignId", c._id).eq("status", status))
+          .collect();
+        for (const row of rows) queued.add(row.email);
+      }
+      const people = (await segmentRecipients(ctx, seg, await blockedEmails(ctx))).filter((p) => !queued.has(p.email));
+      for (const p of people.slice(0, FILL_CHUNK)) {
+        await ctx.db.insert("marketingQueue", { campaignId: c._id, email: p.email, name: p.name, segment: seg, status: "pending", attempts: 0 });
+      }
+      if (people.length > FILL_CHUNK) return { more: true };
     }
 
-    const rest = c.segmentsToSend.filter((s) => s !== args.segment);
-    const now = Date.now();
+    const rest = c.segmentsToSend.slice(1);
+    if (rest.length > 0) {
+      await ctx.db.patch(c._id, { segmentsToSend: rest, updatedAt: Date.now() });
+      return { more: true };
+    }
+    const total = (
+      await ctx.db
+        .query("marketingQueue")
+        .withIndex("by_campaign_and_status", (q) => q.eq("campaignId", c._id).eq("status", "pending"))
+        .collect()
+    ).length;
     await ctx.db.patch(c._id, {
-      segmentsToSend: rest,
-      broadcastIds: [...c.broadcastIds, args.broadcastId],
-      sentCount: c.sentCount + args.count,
-      status: rest.length === 0 ? "sent" : "sending",
-      sentAt: rest.length === 0 ? now : c.sentAt,
-      updatedAt: now,
+      segmentsToSend: [],
+      recipientCount: total,
+      status: total > 0 ? "sending" : "failed",
+      ...(total === 0 ? { lastError: "Nobody in this audience has an email address." } : {}),
+      updatedAt: Date.now(),
     });
-  },
-});
-
-/** A segment with nobody in it is skipped rather than sent. */
-export const internalSkipSegment = internalMutation({
-  args: { campaignId: v.id("marketingCampaigns"), segment: v.string() },
-  handler: async (ctx, args) => {
-    const c = await ctx.db.get(args.campaignId);
-    if (!c) return;
-    const rest = c.segmentsToSend.filter((s) => s !== args.segment);
-    const now = Date.now();
-    await ctx.db.patch(c._id, {
-      segmentsToSend: rest,
-      status: rest.length === 0 ? (c.sentCount > 0 ? "sent" : "failed") : c.status,
-      lastError: rest.length === 0 && c.sentCount === 0 ? "Nobody in this audience has an email address." : c.lastError,
-      sentAt: rest.length === 0 && c.sentCount > 0 ? now : c.sentAt,
-      updatedAt: now,
-    });
+    return { more: total > 0 };
   },
 });
 
@@ -580,16 +536,39 @@ export const internalDirectBatch = internalQuery({
   },
 });
 
+/**
+ * What a sending run did. An email SES took counts as delivered straight away (SES has no
+ * delivery report here); a later hard bounce takes that back (emailEvents.ts).
+ */
 export const internalRecordDirect = internalMutation({
   args: {
     campaignId: v.id("marketingCampaigns"),
-    sent: v.array(v.id("marketingQueue")),
+    sent: v.array(v.object({ id: v.id("marketingQueue"), messageId: v.optional(v.string()) })),
     failed: v.array(v.object({ id: v.id("marketingQueue"), error: v.string(), final: v.boolean() })),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
     let finalFailures = 0;
-    for (const id of args.sent) await ctx.db.patch(id, { status: "sent", sentAt: now });
+    let delivered = 0;
+    for (const s of args.sent) {
+      const row = await ctx.db.get(s.id);
+      if (!row) continue;
+      await ctx.db.patch(s.id, { status: "sent", sentAt: now });
+      const already = await ctx.db
+        .query("marketingEvents")
+        .withIndex("by_campaign_email_type", (q) => q.eq("campaignId", args.campaignId).eq("email", row.email).eq("type", "delivered"))
+        .first();
+      if (!already) {
+        await ctx.db.insert("marketingEvents", {
+          campaignId: args.campaignId,
+          email: row.email,
+          type: "delivered",
+          at: now,
+          eventId: `ses-sent:${s.messageId ?? s.id}`,
+        });
+        delivered++;
+      }
+    }
     for (const f of args.failed) {
       const row = await ctx.db.get(f.id);
       if (!row) continue;
@@ -616,6 +595,7 @@ export const internalRecordDirect = internalMutation({
     await ctx.db.patch(c._id, {
       sentCount,
       failedCount,
+      ...(delivered ? { deliveredCount: (c.deliveredCount ?? 0) + delivered } : {}),
       status: pendingLeft > 0 ? "sending" : failedCount === 0 ? "sent" : sentCount > 0 ? "partial" : "failed",
       sentAt: pendingLeft === 0 ? now : c.sentAt,
       lastError: args.failed[0]?.error ?? c.lastError,

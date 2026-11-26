@@ -4791,8 +4791,9 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_status", ["status"]).index("by_created", ["createdAt"]),
 
-  // Marketing emails (convex/marketing.ts, convex/actions/marketingSend.ts). Group sends go out as
-  // Resend Broadcasts to one Resend audience per segment; one-to-one sends use a throttled queue.
+  // Marketing emails (convex/marketing.ts, convex/actions/marketingSend.ts). Since 26 Nov 2026 every
+  // campaign goes one email per person through Amazon SES from marketingQueue. Before that, group
+  // sends were Resend Broadcasts (marketingAudiences / marketingAudienceMembers, kept for history).
   marketingContacts: defineTable({
     email: v.string(),
     name: v.optional(v.string()),
@@ -4851,9 +4852,12 @@ export default defineSchema({
     clickedCount: v.optional(v.number()),
     bouncedCount: v.optional(v.number()),
     complainedCount: v.optional(v.number()),
+    // People who used this email's unsubscribe link (SES campaigns, convex/emailLinks.ts)
+    unsubscribedCount: v.optional(v.number()),
     // Who "Hello …," names (lib/email/marketing.ts GreetBy); first name when unset
     greetBy: v.optional(v.union(v.literal("first_name"), v.literal("clinic_name"), v.literal("none"))),
-    // A group sent one email at a time through marketingQueue (it names each clinic), not as a Broadcast
+    // Sent one email at a time through marketingQueue: every campaign since the move to SES (and,
+    // before it, groups naming each clinic); older group campaigns were Resend Broadcasts
     oneByOne: v.optional(v.boolean()),
   }).index("by_created", ["createdAt"]),
 
@@ -4869,18 +4873,24 @@ export default defineSchema({
     .index("by_campaign_email_type", ["campaignId", "email", "type"])
     .index("by_campaign_type", ["campaignId", "type", "at"]),
 
-  // One-to-one sends (audience "individual"), drained in batches under the daily cap
+  // One row per person per campaign, sent in batches under the daily cap (actions/marketingSend.ts).
+  // Its id is what the unsubscribe link, open pixel and tracked links carry (convex/emailLinks.ts).
   marketingQueue: defineTable({
     campaignId: v.id("marketingCampaigns"),
     email: v.string(),
     name: v.optional(v.string()),
+    // The group they were in ("patients", …), for group campaigns
+    segment: v.optional(v.string()),
     // For {clinic_name} and a clinic-name greeting
     clinicName: v.optional(v.string()),
     status: v.union(v.literal("pending"), v.literal("sent"), v.literal("failed")),
     attempts: v.number(),
     lastError: v.optional(v.string()),
     sentAt: v.optional(v.number()),
-  }).index("by_campaign_and_status", ["campaignId", "status"]),
+  })
+    .index("by_campaign_and_status", ["campaignId", "status"])
+    .index("by_campaign_and_email", ["campaignId", "email"])
+    .index("by_email", ["email"]),
 
   // Who a group (Broadcast) campaign went to, saved as each segment is sent, so admins can see the
   // people behind the count. One-to-one sends keep theirs in marketingQueue.
@@ -4891,12 +4901,21 @@ export default defineSchema({
     segment: v.string(),
   }).index("by_campaign_and_email", ["campaignId", "email"]),
 
-  // One-to-one marketing emails sent per UTC day, kept under MARKETING_DIRECT_DAILY_LIMIT so they
-  // never use up the Resend free plan's 100 a day that appointment and payment emails rely on
+  // Campaign emails sent per UTC day, kept under MARKETING_DAILY_LIMIT (default 20,000) so they
+  // leave most of SES's 50,000 a day for appointment and payment emails
   marketingDailyUsage: defineTable({
-    day: v.string(), // YYYY-MM-DD (UTC, as Resend counts it)
+    day: v.string(), // YYYY-MM-DD (UTC)
     count: v.number(),
   }).index("by_day", ["day"]),
+
+  // Addresses campaigns leave out: unsubscribed (convex/emailLinks.ts), or a hard bounce / spam
+  // complaint from Amazon SES's suppression list (convex/emailSuppressions.ts)
+  emailSuppressions: defineTable({
+    email: v.string(),
+    reason: v.union(v.literal("unsubscribed"), v.literal("bounced"), v.literal("complained")),
+    at: v.number(),
+    campaignId: v.optional(v.id("marketingCampaigns")),
+  }).index("by_email", ["email"]),
 
   // Clinic outreach (outreach.ts): physiotherapy clinics found city by city, with a contact
   // email read from their websites, worked through by the team and exported to a cold-email tool.
