@@ -2314,13 +2314,35 @@ export const updatePhysiotherapistProfile = mutation({
     bio: v.optional(v.string()),
     yearsOfExperience: v.optional(v.number()),
     languagesSpoken: v.optional(v.array(v.string())),
+    // Practice location (Settings › Profile, owner 27 Nov 2026): the address and its map pin,
+    // which place them for patients nearby; always sent together
     location: v.optional(v.string()),
+    latitude: v.optional(v.number()),
+    longitude: v.optional(v.number()),
     isAvailableOnMarketplace: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
     if (!user || user.role !== "physiotherapist") {
       throw new Error("Unauthorized or not a physiotherapist");
+    }
+    if (args.latitude !== undefined || args.longitude !== undefined) {
+      const { latitude, longitude } = args;
+      if (
+        latitude === undefined ||
+        longitude === undefined ||
+        !Number.isFinite(latitude) ||
+        !Number.isFinite(longitude) ||
+        Math.abs(latitude) > 90 ||
+        Math.abs(longitude) > 180
+      ) {
+        throw new ConvexError("Choose your location on the map again.");
+      }
+    }
+    if (args.location !== undefined) {
+      const location = args.location.trim();
+      if (!location) throw new ConvexError("Enter your practice address.");
+      if (location.length > 300) throw new ConvexError("That address is too long. Shorten it a little.");
     }
 
     // Update User fields if provided
@@ -2358,7 +2380,11 @@ export const updatePhysiotherapistProfile = mutation({
     if (args.bio !== undefined) profileUpdates.bio = args.bio;
     if (args.yearsOfExperience !== undefined) profileUpdates.yearsOfExperience = args.yearsOfExperience;
     if (args.languagesSpoken !== undefined) profileUpdates.languagesSpoken = args.languagesSpoken;
-    if (args.location !== undefined) profileUpdates.location = args.location;
+    if (args.location !== undefined) profileUpdates.location = args.location.trim();
+    if (args.latitude !== undefined && args.longitude !== undefined) {
+      profileUpdates.latitude = args.latitude;
+      profileUpdates.longitude = args.longitude;
+    }
     if (args.isAvailableOnMarketplace !== undefined) profileUpdates.isAvailableOnMarketplace = args.isAvailableOnMarketplace;
 
     if (Object.keys(profileUpdates).length > 0) {

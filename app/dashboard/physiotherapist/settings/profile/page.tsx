@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useMutation, useQuery } from 'convex/react';
 import { Camera, Loader2 } from '@/components/icons';
 import { toast } from 'sonner';
@@ -24,6 +26,15 @@ import {
 import { usePracticeMode } from '@/components/physio/practiceMode';
 import { MyBirthdayFields } from '@/components/moments/MyBirthdayFields';
 import { useFileUpload } from '@/lib/hooks/useFileUpload';
+import { countryCodeFromName, practiceCountry } from '@/lib/practiceCountries';
+
+const MapboxLocationPicker = dynamic(() => import('@/components/onboarding/physiotherapist/MapboxLocationPicker'), {
+    ssr: false,
+    loading: () => <div className="h-[340px] animate-pulse rounded-xl bg-neutral-100 dark:bg-neutral-800" />,
+});
+
+type Place = { location: string; latitude?: number; longitude?: number };
+const samePlace = (a: Place, b: Place) => a.location.trim() === b.location.trim() && a.latitude === b.latitude && a.longitude === b.longitude;
 
 /** Matches the "photo and short bio" item on the setup checklist (convex/physioSetup.ts). */
 const MIN_BIO_LENGTH = 40;
@@ -88,6 +99,13 @@ export default function ProfileSettingsPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [isRemovingPhoto, setIsRemovingPhoto] = useState(false);
     const [loaded, setLoaded] = useState(false);
+    // Practice location: what's on the map now, and what was last saved
+    const [place, setPlace] = useState<Place>({ location: '' });
+    const [savedPlace, setSavedPlace] = useState<Place>({ location: '' });
+    const [countryName, setCountryName] = useState<string | undefined>();
+    const [isSavingPlace, setIsSavingPlace] = useState(false);
+    // The map reads its starting point once: a new key redraws it at the saved place (Undo)
+    const [pickerKey, setPickerKey] = useState(0);
 
     // Fill the form once, so live updates don't overwrite what the user is typing
     useEffect(() => {
@@ -96,8 +114,20 @@ export default function ProfileSettingsPage() {
         setLastName(currentUser.lastName || '');
         setPhone(currentUser.phoneNumber || '');
         const profile = currentUserProfile?.profileData as
-            | { bio?: string; specializations?: string[]; yearsOfExperience?: number }
+            | {
+                  bio?: string;
+                  specializations?: string[];
+                  yearsOfExperience?: number;
+                  location?: string;
+                  latitude?: number;
+                  longitude?: number;
+                  country?: string;
+              }
             | undefined;
+        const saved: Place = { location: profile?.location || '', latitude: profile?.latitude, longitude: profile?.longitude };
+        setPlace(saved);
+        setSavedPlace(saved);
+        setCountryName(profile?.country);
         setBio(profile?.bio || '');
         setSpecializations(profile?.specializations || []);
         setYearsOfExperience(profile?.yearsOfExperience !== undefined ? String(profile.yearsOfExperience) : '');
@@ -168,6 +198,23 @@ export default function ProfileSettingsPage() {
         }
     };
 
+    const handleSavePlace = async () => {
+        if (!place.location.trim() || place.latitude === undefined || place.longitude === undefined) {
+            toast.error('Search for your address, or tap the map, so your pin is in the right place.');
+            return;
+        }
+        setIsSavingPlace(true);
+        try {
+            await updateProfile({ location: place.location.trim(), latitude: place.latitude, longitude: place.longitude });
+            setSavedPlace(place);
+            toast.success(isIndependent ? 'Location saved' : 'Location saved. Patients near it now see you first.');
+        } catch (error) {
+            toast.error((error as Error).message?.replace(/^.*ConvexError: /, '').split('\n')[0] || 'Couldn’t save your location. Try again.');
+        } finally {
+            setIsSavingPlace(false);
+        }
+    };
+
     if (!loaded || !currentUser) {
         return (
             <div className="space-y-4">
@@ -179,6 +226,8 @@ export default function ProfileSettingsPage() {
     }
 
     const bioLength = bio.trim().length;
+    const countryCode = countryCodeFromName(countryName);
+    const placeChanged = !samePlace(place, savedPlace);
     const initials = `${currentUser.firstName?.[0] ?? ''}${currentUser.lastName?.[0] ?? ''}`.toUpperCase();
 
     return (
@@ -298,6 +347,61 @@ export default function ProfileSettingsPage() {
                         <Label className={fieldLabelClass}>Specialisations</Label>
                         <SpecialisationPicker value={specializations} onChange={setSpecializations} />
                     </div>
+                </div>
+            </SettingsSection>
+
+            <SettingsSection
+                title="Practice location"
+                description={
+                    isIndependent
+                        ? 'Where you see patients. Search for the address or tap the map, then drag the pin if it needs moving.'
+                        : 'Where you see patients. Patients near it see you first. Search for the address or tap the map, then drag the pin if it needs moving.'
+                }
+                footer={
+                    <div className="flex flex-wrap items-center gap-3">
+                        <Button onClick={handleSavePlace} disabled={isSavingPlace || !placeChanged} className={primaryButtonClass}>
+                            {isSavingPlace && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Save location
+                        </Button>
+                        {placeChanged ? (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => (setPlace(savedPlace), setPickerKey((k) => k + 1))}
+                                disabled={isSavingPlace}
+                                className="text-neutral-500"
+                            >
+                                Undo changes
+                            </Button>
+                        ) : null}
+                    </div>
+                }
+            >
+                <div className="space-y-3">
+                    {savedPlace.location ? (
+                        <p className="text-sm text-neutral-600 dark:text-neutral-300">
+                            <span className="font-medium text-rh-ink dark:text-white">Saved: </span>
+                            {savedPlace.location}
+                        </p>
+                    ) : (
+                        <p className="text-sm text-neutral-600 dark:text-neutral-300">You haven’t set a practice location yet.</p>
+                    )}
+                    <MapboxLocationPicker
+                        key={pickerKey}
+                        countryCode={countryCode}
+                        center={practiceCountry(countryCode).center}
+                        value={place}
+                        onChange={(data) => setPlace({ location: data.location, latitude: data.latitude, longitude: data.longitude })}
+                    />
+                    {!isIndependent && (
+                        <p className={fieldHintClass}>
+                            For home visits, the areas you travel to are set under{' '}
+                            <Link href="/dashboard/physiotherapist/settings/marketplace" className="font-medium text-rh-ink underline dark:text-rh-lime">
+                                Services &amp; coverage
+                            </Link>
+                            .
+                        </p>
+                    )}
                 </div>
             </SettingsSection>
 
