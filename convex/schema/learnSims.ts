@@ -55,9 +55,34 @@ export const learnSimTables = {
     outcome: v.optional(v.string()),
     startedAt: v.number(),
     finishedAt: v.optional(v.number()),
+    // "Talk to the patient" (owner 2026-11-26): the conversation's state (engine ConsultState), and
+    // when an AI turn started (one at a time; a stale lock clears after a minute)
+    mode: v.optional(v.literal("consult")),
+    consult: v.optional(v.any()),
+    pendingAt: v.optional(v.number()),
   })
     .index("by_user_case", ["userId", "caseSlug", "startedAt"])
     .index("by_case", ["caseSlug", "startedAt"]),
+
+  // The conversation in a consult, one row per message (learner, patient, or a note from the case).
+  // `signals`/`asked` are the AI's verdict on a learner message, shown only in the debrief.
+  learnSimTurns: defineTable({
+    attemptId: v.id("learnSimAttempts"),
+    index: v.number(),
+    stage: v.union(v.literal("history"), v.literal("explain")),
+    role: v.union(v.literal("physio"), v.literal("patient"), v.literal("system")),
+    text: v.string(),
+    emotion: v.optional(v.string()),
+    // Learner messages: which facts it asked about, what it did, unexplained words
+    asked: v.optional(v.array(v.string())),
+    signals: v.optional(v.any()),
+    jargon: v.optional(v.array(v.string())),
+    // Patient replies: findings this answer revealed, checklist items the message before covered
+    found: v.optional(v.array(v.string())),
+    covered: v.optional(v.array(v.string())),
+    rapport: v.optional(v.number()),
+    at: v.number(),
+  }).index("by_attempt", ["attemptId", "index"]),
 
   // One row per choice, for the admin's choice spread and drop-off
   // A learner's shared run of a case (owner 2026-11-14: share simulations to social media). The

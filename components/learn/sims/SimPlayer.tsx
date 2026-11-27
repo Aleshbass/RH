@@ -26,6 +26,7 @@ import {
   ClipboardList,
   Loader2,
   MapPin,
+  MessageCircle,
   Play,
   RotateCcw,
   Volume2,
@@ -51,6 +52,7 @@ import { setVoiceOn, stopVoice, unlockSimAudio, voiceOn } from './simAudio'
 import { SimDebrief } from './SimDebrief'
 import { ScoredPlayer } from './v2/ScoredPlayer'
 import { SceneCredit } from './v2/PatientStage'
+import { ConsultPlayer } from './consult/ConsultPlayer'
 
 const initials = (name: string) =>
   name
@@ -134,24 +136,25 @@ function CaseIntro({ slug, card, signedIn, member, forcePreview }: { slug: strin
   const preview = forcePreview || !card.live
   const router = useRouter()
   const start = useMutation(simApi.start)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<null | 'consult' | 'classic'>(null)
+  const first = card.patient.name.replace(/^(Mr|Mrs|Ms|Dr)\.?\s+/i, '').split(/\s+/)[0]
 
   useEffect(() => {
     simTrack('sim_open', { case: slug, mode: card.mode })
   }, [slug, card.mode])
 
-  const begin = async () => {
+  const begin = async (how: 'consult' | 'classic') => {
     unlockSimAudio()
     stopVoice()
-    setBusy(true)
+    setBusy(how)
     try {
-      const res = await start({ slug, preview: preview || undefined })
+      const res = await start({ slug, preview: preview || undefined, mode: how === 'consult' ? 'consult' : undefined })
       noteServerTime(res.serverNow)
-      simTrack('sim_start', { case: slug, mode: card.mode, preview })
+      simTrack('sim_start', { case: slug, mode: how === 'consult' ? 'consult' : card.mode, preview })
       router.replace(attemptPath(slug, res.attemptId))
     } catch (err) {
       toast.error(errorText(err, 'Couldn’t start the case. Try again.'))
-      setBusy(false)
+      setBusy(null)
     }
   }
 
@@ -195,11 +198,18 @@ function CaseIntro({ slug, card, signedIn, member, forcePreview }: { slug: strin
       </div>
 
       <ul className="mt-6 grid gap-3 sm:grid-cols-3">
-        {[
-          { icon: Clock, text: card.mode === 'triage' ? 'The clock runs in real time, and every action takes time.' : 'Each question and test uses consultation time.' },
-          { icon: Activity, text: 'The patient reacts to what you do. Some choices are unsafe.' },
-          { icon: ClipboardList, text: 'At the end, see your score, what you missed and what an expert would do.' },
-        ].map((item) => (
+        {(card.consult
+          ? [
+              { icon: MessageCircle, text: `Talk to ${first} in your own words, typed or spoken. ${card.patient.sex === 'F' ? 'She' : 'He'} answers, and notices how you talk.` },
+              { icon: Activity, text: 'Examine, decide on a plan, explain it, then write your note in the Rehabify note editor.' },
+              { icon: ClipboardList, text: 'Get coaching on your own words, what you missed, and how an expert would do it.' },
+            ]
+          : [
+              { icon: Clock, text: card.mode === 'triage' ? 'The clock runs in real time, and every action takes time.' : 'Each question and test uses consultation time.' },
+              { icon: Activity, text: 'The patient reacts to what you do. Some choices are unsafe.' },
+              { icon: ClipboardList, text: 'At the end, see your score, what you missed and what an expert would do.' },
+            ]
+        ).map((item) => (
           <li key={item.text} className="flex gap-3 rounded-2xl border border-rh-ink/[0.08] p-4 text-sm leading-6 text-rh-ink/70">
             <item.icon className="mt-0.5 h-4 w-4 shrink-0 text-rh-ink" />
             {item.text}
@@ -219,9 +229,21 @@ function CaseIntro({ slug, card, signedIn, member, forcePreview }: { slug: strin
                 <Play className="h-4 w-4" /> Resume
               </button>
             )}
-            <button type="button" onClick={() => void begin()} disabled={busy} className={cn(pillInk, 'h-12 px-8 text-base')}>
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              {card.mine?.activeAttemptId ? 'Start again' : card.mine?.tries ? 'Play again' : 'Start the case'}
+            {card.consult && (
+              <button type="button" onClick={() => void begin('consult')} disabled={Boolean(busy)} className={cn(pillLime, 'relative h-12 px-7 text-base')}>
+                {busy === 'consult' ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+                Talk to {first}
+                <span className="ml-1 rounded-full bg-rh-ink px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rh-lime">New</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void begin('classic')}
+              disabled={Boolean(busy)}
+              className={cn(card.consult ? pillOutline : pillInk, 'h-12 px-8 text-base', card.consult && 'px-6 text-[15px]')}
+            >
+              {busy === 'classic' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              {card.consult ? 'Play with taps' : card.mine?.activeAttemptId ? 'Start again' : card.mine?.tries ? 'Play again' : 'Start the case'}
             </button>
             <VoiceToggle className="self-start bg-rh-cream text-rh-ink sm:ml-auto sm:self-auto" />
           </div>
@@ -274,6 +296,7 @@ function AttemptScreen({ slug, attemptId }: { slug: string; attemptId: string })
     )
   }
   if (attempt.status === 'finished' && showDebrief) return <SimDebrief attemptId={attempt.attemptId} slug={slug} />
+  if (attempt.mode === 'consult') return <ConsultPlayer attempt={attempt} onDone={showDebriefNow} />
   return <ScoredPlayer attempt={attempt} onDone={showDebriefNow} />
 }
 

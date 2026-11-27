@@ -139,6 +139,40 @@
           }
         },
         {
+          "id": "a-worry",
+          "label": "Is anything worrying you about this injury?",
+          "category": "ask",
+          "costSec": 15,
+          "next": "history",
+          "points": 8,
+          "tag": "high-yield",
+          "feedback": "Good: asking about his worries uncovered the real pressure, his scholarship. It shapes how you explain the plan and set honest expectations.",
+          "reveals": [
+            "f-worry"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "Honestly? I'm on a sports scholarship. If I miss the final, coach might drop me, and my mum can't pay my fees without it."
+          }
+        },
+        {
+          "id": "a-function",
+          "label": "What can’t you do right now? Score each activity from 0 (can’t do it) to 10 (normal).",
+          "category": "ask",
+          "costSec": 20,
+          "next": "history",
+          "points": 4,
+          "tag": "high-yield",
+          "feedback": "Good: a Patient-Specific Functional Scale gives a baseline on the activities he cares about, so you can show him his progress.",
+          "reveals": [
+            "f-function"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "Running? Zero, I can’t. Kicking a ball, maybe two. Climbing the stairs to my hostel room, about four."
+          }
+        },
+        {
           "id": "a-screen",
           "label": "Any numbness, tingling, colour change in the foot, or pain in the calf?",
           "costSec": 10,
@@ -458,6 +492,16 @@
       "id": "f-nv",
       "label": "Nerves and circulation",
       "detail": "Foot pulses present; sensation normal."
+    },
+    "f-worry": {
+      "id": "f-worry",
+      "label": "Main worry",
+      "detail": "Fears losing his sports scholarship (it pays his fees) if he misses the final."
+    },
+    "f-function": {
+      "id": "f-function",
+      "label": "Function (PSFS)",
+      "detail": "Running 0/10, kicking a ball 2/10, climbing stairs 4/10 (average 2/10)."
     }
   },
   "mustDo": [
@@ -474,6 +518,8 @@
     "a-weight",
     "a-history",
     "a-goals",
+    "a-worry",
+    "a-function",
     "a-screen",
     "to-exam",
     "b-ottawa",
@@ -491,7 +537,8 @@
     "For most lateral ankle sprains, functional support and early, progressive loading beat rest and casting.",
     "Previous sprains raise the risk of another one; balance (neuromuscular) training lowers it.",
     "Return to sport on criteria (pain-free hopping, balance, sport-specific drills), not on a date.",
-    "The anterior drawer test is more accurate 4–5 days after the injury, once the swelling settles."
+    "The anterior drawer test is more accurate 4–5 days after the injury, once the swelling settles.",
+    "Ask about worries and expectations, and acknowledge them: patients share what matters most once they trust you, and it changes how you explain the plan."
   ],
   "references": [
     {
@@ -508,5 +555,305 @@
     {
       "label": "Dubois B, Esculier JF. Soft-tissue injuries simply need PEACE and LOVE. Br J Sports Med. 2020;54(2):72–73."
     }
-  ]
+  ],
+  "consult": {
+    "node": "history",
+    "moveOn": "to-exam",
+    "persona": {
+      "voice": "Friendly, polite and a little restless. Short spoken sentences in Nigerian English; calls the physio 'sir' or 'ma'. A touch of Pidgin when he relaxes or gets frustrated (\"e dey pain me small\"), never heavy.",
+      "background": "Second-year mechanical engineering student at the University of Nigeria, Nsukka. Lives in a hostel room on the third floor. The team’s striker. His mum is a trader in Ibadan. His teammate Chidi helped him hop in and is waiting outside.",
+      "worries": [
+        "Missing the inter-varsity final in three weeks",
+        "Whether the ankle is broken"
+      ],
+      "annoyances": [
+        "Being rushed or talked over",
+        "Medical words he doesn’t understand",
+        "Being told to rest with no plan",
+        "Being told he can’t play without a reason"
+      ],
+      "cue": "Early on, once, hint that more than the match rides on the final (for example: \"This final means a lot for me, more than you know.\") without explaining unless asked.",
+      "unknown": "No, nothing like that.",
+      "language": "If the physio speaks Pidgin, answer in Pidgin.",
+      "walkout": "Tunde felt you weren’t listening. He thanked you politely, hopped out with Chidi and went to the team’s massage therapist instead, who strapped it tight and told him to play on Saturday."
+    },
+    "startRapport": 55,
+    "guarded": [
+      {
+        "choice": "a-worry",
+        "minRapport": 60,
+        "deflect": "It's fine. Just help me get back for the final."
+      }
+    ],
+    "explain": {
+      "questions": [
+        "So is it broken?",
+        "Coach says I must do an X-ray. Do I need one?",
+        "Will I play the final?",
+        "What should I do at home?"
+      ],
+      "items": [
+        {
+          "id": "e-plain",
+          "label": "Explained what’s wrong in plain words (a sprained ligament on the outside of the ankle, not a broken bone)",
+          "points": 6
+        },
+        {
+          "id": "e-xray",
+          "label": "Explained the X-ray decision in a way he could pass on to his coach",
+          "points": 4
+        },
+        {
+          "id": "e-final",
+          "label": "Was honest about the final: he goes back when he passes tests (hopping, balance, drills), not on a date",
+          "points": 6
+        },
+        {
+          "id": "e-home",
+          "label": "Gave clear things to do at home (brace, walking as pain allows, early exercises)",
+          "points": 4
+        },
+        {
+          "id": "e-safety",
+          "label": "Told him when to come back sooner (can’t walk on it in 5–7 days, worse pain, numbness or colour change)",
+          "points": 5
+        },
+        {
+          "id": "e-worry",
+          "label": "Acknowledged his worry about the final or his scholarship",
+          "points": 3
+        },
+        {
+          "id": "e-check",
+          "label": "Checked he understood, or asked him to say the plan back",
+          "points": 3
+        }
+      ]
+    },
+    "note": {
+      "rubric": [
+        {
+          "id": "s-mech",
+          "section": "S",
+          "label": "Mechanism: inversion injury yesterday (landed on an opponent’s foot), pop laterally",
+          "points": 3,
+          "finding": "f-mech"
+        },
+        {
+          "id": "s-weight",
+          "section": "S",
+          "label": "Weight-bearing: couldn’t at the time, a few steps with a limp now",
+          "points": 4,
+          "finding": "f-weight"
+        },
+        {
+          "id": "s-history",
+          "section": "S",
+          "label": "Two previous sprains of the same ankle",
+          "points": 3,
+          "finding": "f-history"
+        },
+        {
+          "id": "s-goal",
+          "section": "S",
+          "label": "Goal: inter-varsity final in three weeks",
+          "points": 2,
+          "finding": "f-goals"
+        },
+        {
+          "id": "s-screen",
+          "section": "S",
+          "label": "Screen negative: no numbness, tingling, colour change or calf pain",
+          "points": 2,
+          "finding": "f-screen"
+        },
+        {
+          "id": "s-worry",
+          "section": "S",
+          "label": "His main worry: losing his scholarship if he misses the final",
+          "points": 2,
+          "finding": "f-worry"
+        },
+        {
+          "id": "s-pain",
+          "section": "S",
+          "label": "Pain score (about 6/10 walking, 3/10 at rest)",
+          "points": 1
+        },
+        {
+          "id": "o-ottawa",
+          "section": "O",
+          "label": "Ottawa ankle rules negative (no bony tenderness at the Ottawa points; tender over the ATFL)",
+          "points": 5,
+          "finding": "f-ottawa"
+        },
+        {
+          "id": "o-syndesmosis",
+          "section": "O",
+          "label": "Squeeze and external rotation tests negative",
+          "points": 3,
+          "finding": "f-syndesmosis"
+        },
+        {
+          "id": "o-drawer",
+          "section": "O",
+          "label": "Anterior drawer: more laxity than the other side, painful",
+          "points": 2,
+          "finding": "f-drawer"
+        },
+        {
+          "id": "o-nv",
+          "section": "O",
+          "label": "Pulses present, sensation normal",
+          "points": 2,
+          "finding": "f-nv"
+        },
+        {
+          "id": "o-obs",
+          "section": "O",
+          "label": "Lateral swelling and bruising",
+          "points": 1,
+          "finding": "f-look"
+        },
+        {
+          "id": "o-outcome",
+          "section": "O",
+          "label": "A baseline outcome measure on his own activities (e.g. PSFS: running 0, kicking 2, stairs 4)",
+          "points": 2,
+          "finding": "f-function"
+        },
+        {
+          "id": "a-dx",
+          "section": "A",
+          "label": "Lateral ankle sprain (ATFL), fracture unlikely by the Ottawa rules",
+          "points": 5
+        },
+        {
+          "id": "a-risk",
+          "section": "A",
+          "label": "Higher risk of another sprain (third one)",
+          "points": 2
+        },
+        {
+          "id": "p-load",
+          "section": "P",
+          "label": "Brace, weight-bearing as pain allows, early movement and progressive loading",
+          "points": 4
+        },
+        {
+          "id": "p-balance",
+          "section": "P",
+          "label": "Balance (neuromuscular) training",
+          "points": 2
+        },
+        {
+          "id": "p-rts",
+          "section": "P",
+          "label": "Return to sport on criteria, not on a date",
+          "points": 3
+        },
+        {
+          "id": "p-safety",
+          "section": "P",
+          "label": "Safety net: when to come back sooner",
+          "points": 2
+        },
+        {
+          "id": "p-review",
+          "section": "P",
+          "label": "Review planned (e.g. 4–5 days, repeat the drawer test)",
+          "points": 1
+        }
+      ],
+      "model": {
+        "S": "22-year-old university striker. Inversion injury to L ankle yesterday landing on an opponent’s foot; felt a lateral pop. Unable to weight-bear at the time; now takes a few steps with a limp. Pain 6/10 walking, 3/10 at rest. Two previous L ankle sprains. No numbness, tingling, colour change or calf pain. Goal: inter-varsity final in 3 weeks. Main concern: losing his sports scholarship if he misses it.",
+        "O": "Moderate lateral swelling and bruising. Tender over the ATFL. Ottawa ankle rules negative: no bony tenderness at the posterior edge or tip of either malleolus, base of 5th metatarsal or navicular, and able to take 4 steps. Anterior drawer: more laxity than R, soft end feel, painful (repeat at 4–5 days). Squeeze and external rotation tests negative. Pedal pulses present, sensation intact. PSFS: running 0/10, kicking 2/10, stairs 4/10 (average 2/10).",
+        "A": "Acute L lateral ankle sprain (ATFL), likely grade II. Fracture unlikely (Ottawa negative); no sign of syndesmosis injury. Higher risk of recurrence (third sprain).",
+        "P": "No X-ray: explained the Ottawa rules (letter for coach offered). Lace-up brace, weight-bear as pain allows, early range of movement, progressive loading and balance training. Return to sport on criteria (pain-free hopping, balance, sport-specific drills), not on a date. Discussed his scholarship worry and a realistic timeline. Safety net: return if unable to weight-bear in 5–7 days, worsening pain, numbness or colour change. Review in 4–5 days to repeat the drawer test and progress."
+      }
+    },
+    "expert": {
+      "label": "A model consultation (draft until a physio signs this case off)",
+      "transcript": [
+        {
+          "speaker": "physio",
+          "text": "Good morning, Tunde. I'm one of the physios here. Have a seat and take the weight off that ankle. What happened?",
+          "note": "Introduces themself, makes him comfortable, starts with an open question."
+        },
+        {
+          "speaker": "patient",
+          "text": "I landed on a defender's foot and my ankle rolled in. I felt a pop on the outside."
+        },
+        {
+          "speaker": "physio",
+          "text": "That sounds painful. Straight after it happened, could you put weight on it? And how about now?",
+          "note": "Acknowledges, then asks the key Ottawa question: weight-bearing then and now."
+        },
+        {
+          "speaker": "patient",
+          "text": "At the time I couldn't put it down; my teammates carried me off. This morning I can take a few steps, but I'm limping."
+        },
+        {
+          "speaker": "physio",
+          "text": "Okay. Has this ankle ever gone before?"
+        },
+        {
+          "speaker": "patient",
+          "text": "Yes, twice. Last season, and once in secondary school."
+        },
+        {
+          "speaker": "physio",
+          "text": "Any numbness or tingling, or the foot changing colour? Any pain in your calf?",
+          "note": "A quick safety screen."
+        },
+        {
+          "speaker": "patient",
+          "text": "No, none of that."
+        },
+        {
+          "speaker": "physio",
+          "text": "You mentioned the final. Tell me about it.",
+          "note": "Picks up the cue he dropped."
+        },
+        {
+          "speaker": "patient",
+          "text": "The inter-varsity final, three weeks from Saturday. Coach is counting on me."
+        },
+        {
+          "speaker": "physio",
+          "text": "It sounds like a lot is riding on this. Is anything worrying you about it?",
+          "note": "Empathy first, then asks about worries: this is when he opens up."
+        },
+        {
+          "speaker": "patient",
+          "text": "Honestly? I'm on a sports scholarship. If I miss the final, coach might drop me, and my mum can't pay my fees without it."
+        },
+        {
+          "speaker": "physio",
+          "text": "Thank you for telling me. That's a real pressure, and we'll plan with the final in mind. What can't you do right now? Score each thing from 0, can't do it, to 10, normal.",
+          "note": "Acknowledges the worry, then a quick Patient-Specific Functional Scale: a baseline on what matters to him."
+        },
+        {
+          "speaker": "patient",
+          "text": "Running? Zero, I can’t. Kicking a ball, maybe two. Climbing the stairs to my hostel room, about four."
+        },
+        {
+          "speaker": "physio",
+          "text": "Let me check I've got it right: you rolled it in yesterday, couldn't walk at first but can take a few steps now, it's your third sprain, no numbness, and the final matters a lot for your scholarship. Anything I've missed?",
+          "note": "Summarises and checks: he feels heard, and errors get caught."
+        },
+        {
+          "speaker": "patient",
+          "text": "No, that's everything."
+        },
+        {
+          "speaker": "physio",
+          "text": "Thanks. I'd like to examine your ankle now. I'll press on a few spots; tell me if anything is very sore.",
+          "note": "Explains what happens next before touching him."
+        }
+      ]
+    },
+    "maxTurns": 24,
+    "explainTurns": 8
+  }
 }

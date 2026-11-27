@@ -6,6 +6,7 @@
 import { makeFunctionReference, type RegisteredMutation, type RegisteredQuery } from 'convex/server'
 import type { Id } from '@/convex/_generated/dataModel'
 import type * as sims from '@/convex/learnSims'
+import type * as consult from '@/convex/learnSimConsult'
 import type { SimCase } from '@/lib/learn/simulation/engine'
 import { track } from '@/lib/analytics/posthog'
 import { learnPath } from '../platform/learnApi'
@@ -26,12 +27,18 @@ export type SimStats = NonNullable<Returns<typeof sims.adminCaseStats>>
 export type SimLineView = NonNullable<SimAttempt['node']>['lines'][number]
 export type SimShare = NonNullable<Returns<typeof sims.getShare>>
 export type SimShareBeat = SimShare['beats'][number]
+export type ConsultTurn = NonNullable<Returns<typeof consult.conversation>>[number]
+export type ConsultInfo = NonNullable<SimAttempt['consult']>
+export type ConsultDebriefView = NonNullable<SimDebriefView['consult']>
+export type NoteSections = { S: string; O: string; A: string; P: string }
 
 type AttemptId = Id<'learnSimAttempts'>
 
 export const simApi = {
   list: makeFunctionReference<'query', Record<string, never>, SimList>('learnSims:listCases'),
-  start: makeFunctionReference<'mutation', { slug: string; preview?: boolean }, { attemptId: AttemptId; serverNow: number }>('learnSims:startAttempt'),
+  start: makeFunctionReference<'mutation', { slug: string; preview?: boolean; mode?: 'consult' }, { attemptId: AttemptId; serverNow: number }>(
+    'learnSims:startAttempt'
+  ),
   attempt: makeFunctionReference<'query', { attemptId: string }, SimAttempt | null>('learnSims:getAttempt'),
   choose: makeFunctionReference<'mutation', { attemptId: AttemptId; choiceId: string }, { serverNow: number; applied: boolean; finished: boolean }>(
     'learnSims:choose'
@@ -52,6 +59,17 @@ export const simApi = {
   adminStats: makeFunctionReference<'query', { slug: string }, SimStats | null>('learnSims:adminCaseStats'),
   createShare: makeFunctionReference<'mutation', { attemptId: string }, { code: string }>('learnSims:createShare'),
   share: makeFunctionReference<'query', { code: string }, SimShare | null>('learnSims:getShare'),
+}
+
+/** "Talk to the patient" (convex/learnSimConsult.ts). */
+export const consultApi = {
+  conversation: makeFunctionReference<'query', { attemptId: string }, ConsultTurn[] | null>('learnSimConsult:conversation'),
+  say: makeFunctionReference<'action', { attemptId: AttemptId; text: string }, { walkedOut: boolean; stage: string }>('learnSimConsult:say'),
+  moveOn: makeFunctionReference<'mutation', { attemptId: AttemptId }, null>('learnSimConsult:moveOn'),
+  finishExplaining: makeFunctionReference<'mutation', { attemptId: AttemptId }, null>('learnSimConsult:finishExplaining'),
+  submitNote: makeFunctionReference<'action', { attemptId: AttemptId; sections: NoteSections; skip?: boolean }, null>('learnSimConsult:submitNote'),
+  transcribe: makeFunctionReference<'action', { attemptId: AttemptId; audio: ArrayBuffer }, { text: string }>('learnSimConsult:transcribe'),
+  speak: makeFunctionReference<'action', { attemptId: AttemptId; index: number }, ArrayBuffer>('learnSimConsult:speak'),
 }
 
 /** A shared run's replay page (anyone with the link can watch it). */
@@ -94,7 +112,19 @@ export function errorText(err: unknown, fallback: string) {
 
 /** Product analytics (consent-gated; no-op until PostHog has started). */
 export function simTrack(
-  event: 'sim_open' | 'sim_start' | 'sim_choice' | 'sim_finish' | 'sim_abandon' | 'sim_interest' | 'sim_share' | 'sim_replay' | 'sim_video',
+  event:
+    | 'sim_open'
+    | 'sim_start'
+    | 'sim_choice'
+    | 'sim_finish'
+    | 'sim_abandon'
+    | 'sim_interest'
+    | 'sim_share'
+    | 'sim_replay'
+    | 'sim_video'
+    | 'sim_consult_say'
+    | 'sim_consult_stage'
+    | 'sim_consult_note',
   props: Record<string, string | number | boolean | null>) {
   try {
     track(event, props)

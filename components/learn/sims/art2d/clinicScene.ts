@@ -14,7 +14,8 @@ import { PEOPLE_DEFS, peopleScene } from './people'
 export type Pose = 'seated' | 'distress' | 'resting'
 export type MouthShape = 'x' | 'm' | 'e' | 'a' | 'o'
 /** What a case scene asks for: a person (Mrs Okonkwo when unset) and their pose. */
-export type Art2dSpec = { pose: string; character?: string }
+/** `mood`: a talking patient's face (people.ts characters; the default per pose otherwise). */
+export type Art2dSpec = { pose: string; character?: string; mood?: 'calm' | 'uneasy' | 'worried' | 'pain' }
 
 export type SceneOptions = {
   pose: Pose
@@ -398,7 +399,7 @@ export function sceneSvg(art: Art2dSpec, opts: { mouth?: MouthShape; eyes?: 'ope
   const who = art.character ?? 'ngozi'
   if (who === 'funmi' || who === 'tunde' || who === 'emeka') {
     return frame(
-      peopleScene({ character: who, pose: art.pose }, (variant) => room() + (variant === 'sports' ? sportsExtras() : '')),
+      peopleScene({ character: who, pose: art.pose, mood: art.mood }, (variant) => room() + (variant === 'sports' ? sportsExtras() : '')),
       opts.mouth,
       opts.eyes
     )

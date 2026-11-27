@@ -69,9 +69,16 @@ export const STAGE_CLASS =
  * panes when `wide` (the player: patient on the left, conversation on the right), one centred
  * column otherwise (the debrief).
  */
-export function PlayerFrame({ wide = false, children }: { wide?: boolean; children: ReactNode }) {
+export function PlayerFrame({ wide = false, low = false, children }: { wide?: boolean; low?: boolean; children: ReactNode }) {
   return (
-    <div className="fixed inset-0 z-[80] flex justify-center bg-[rgb(3_8_7/0.6)] lg:items-center lg:bg-[rgb(3_8_7/0.86)] lg:p-6">
+    <div
+      className={cn(
+        'fixed inset-0 flex justify-center bg-[rgb(3_8_7/0.6)] lg:items-center lg:bg-[rgb(3_8_7/0.86)] lg:p-6',
+        // `low`: above the Learn header (z-40) but under menus and pop-overs (z-50), for screens with
+        // dropdowns inside (the note editor's selects would otherwise open behind the frame)
+        low ? 'z-[45]' : 'z-[80]'
+      )}
+    >
       <div
         className={cn(
           'relative flex h-[100dvh] w-full max-w-[460px] flex-col overflow-hidden bg-rh-cream sm:border-x sm:border-[rgb(255_255_255/0.1)] md:max-w-[640px] lg:h-[calc(100dvh-48px)] lg:max-h-[920px] lg:rounded-[28px] lg:border lg:shadow-[0_30px_90px_-24px_rgb(0_0_0/0.7)]',
@@ -311,7 +318,7 @@ export function Thread({
   )
 }
 
-function FindingCard({ label, detail, abnormal }: { label: string; detail: string; abnormal: boolean }) {
+export function FindingCard({ label, detail, abnormal }: { label: string; detail: string; abnormal: boolean }) {
   return (
     <div className={cn('mx-1 flex gap-2.5 rounded-2xl border px-3.5 py-2.5', abnormal ? 'border-rh-danger-line bg-rh-danger-soft' : 'border-rh-ink/10 bg-white')}>
       <Stethoscope className={cn('mt-0.5 h-4 w-4 shrink-0', abnormal ? 'text-rh-danger-ink' : 'text-rh-ink/50')} />

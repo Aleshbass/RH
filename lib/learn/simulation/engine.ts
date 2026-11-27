@@ -71,7 +71,7 @@ export type SimScene = {
   mouth?: string
   credit?: string
   /** Drawn in 2D instead of video (components/learn/sims/art2d): the pose to draw; `src` is its still. */
-  art2d?: { pose: string; character?: string }
+  art2d?: { pose: string; character?: string; mood?: 'calm' | 'uneasy' | 'worried' | 'pain' }
 }
 export type SimFinding = { id: string; label: string; detail: string; abnormal?: boolean }
 export type SimSpeaker = { name: string; role: string; voice?: string }
@@ -122,6 +122,8 @@ export type SimCase = {
   narration?: boolean
   /** Narrator voice (ElevenLabs id); voice.mjs picks one no speaker uses when unset. */
   narrator?: { voice: string }
+  /** "Talk to the patient" mode (owner 2026-11-26): see the Consult section below. */
+  consult?: ConsultSpec
 }
 
 // ── Attempt state ─────────────────────────────────────────────────────────────
@@ -378,7 +380,8 @@ export function endingOf(def: SimCase, state: SimState): SimEnd | null {
   return { outcome: 'harm', title: 'Unsafe decision', summary: last?.feedback ?? 'That choice put the patient at risk.' }
 }
 
-export function scoreState(def: SimCase, state: SimState): SimScore {
+/** `skipBudget`: phases whose time budget doesn't count (a consult's conversation runs on real talk). */
+export function scoreState(def: SimCase, state: SimState, opts: { skipBudget?: PhaseId[] } = {}): SimScore {
   const index = choiceIndex(def)
   const taken = state.steps.map((s) => s.choiceId)
   const takenSet = new Set(taken)
@@ -391,8 +394,11 @@ export function scoreState(def: SimCase, state: SimState): SimScore {
     points += choice.points
     if (choice.tag === 'harmful') harmful.push(id)
   }
+  const skip = opts.skipBudget ?? []
   const overBudget =
-    def.mode === 'full' ? def.phases.filter((p) => (state.phaseSec[p.id] ?? 0) > p.budgetSec).map((p) => p.id) : []
+    def.mode === 'full'
+      ? def.phases.filter((p) => !skip.includes(p.id) && (state.phaseSec[p.id] ?? 0) > p.budgetSec).map((p) => p.id)
+      : []
   points -= overBudget.length * OVER_BUDGET_PENALTY
   const pct = max > 0 ? clamp(Math.round((points / max) * 100), 0, 100) : 0
   const mustDoMissed = def.mustDo.filter((id) => !takenSet.has(id))
@@ -540,5 +546,494 @@ export function validateCase(def: SimCase): string[] {
     else if (!score.passed) say('expertPath must pass (check mustDo, passMark and phase budgets)')
     if (maxPoints(def) <= 0) say('expertPath must earn points')
   }
+  if (def.consult) problems.push(...validateConsult(def))
+  return problems
+}
+
+// ── Consult mode: talk to the patient (owner 2026-11-26) ─────────────────────
+//
+// The learner clerks the patient in their own words instead of tapping questions. An AI plays the
+// patient, but it never scores: for each message it says which of the history node's questions
+// (the case's facts) the learner asked and which communication behaviours it showed. Everything
+// else happens here, in the same referee as the tap-to-choose game:
+//   - facts asked become the same choices (points, findings, time), so scores stay comparable;
+//   - trust (rapport) moves by fixed weights per behaviour; guarded facts (the worry the patient
+//     holds back) are only shared once trust is high enough, and very low trust ends the visit;
+//   - after the plan the learner explains it to the patient (a checklist the AI ticks), then writes
+//     a SOAP note marked against the case's rubric.
+
+/** What one learner message did, as judged by the AI from the patient's chair. */
+export type ConsultSignals = {
+  /** An open question ("Tell me what happened") */
+  open: boolean
+  /** Acknowledges a feeling or worry */
+  empathy: boolean
+  /** Explains something in plain words */
+  plain: boolean
+  /** Checks understanding or summarises back */
+  checks: boolean
+  /** Medical words a layperson wouldn't know, unexplained */
+  jargon: boolean
+  /** Ignores or brushes off what the patient just said */
+  dismissive: boolean
+  rude: boolean
+  /** Three or more questions at once */
+  stacked: boolean
+}
+export const SIGNAL_KEYS: (keyof ConsultSignals)[] = ['open', 'empathy', 'plain', 'checks', 'jargon', 'dismissive', 'rude', 'stacked']
+
+/** How much each behaviour moves the patient's trust (0–100). */
+export const RAPPORT_WEIGHTS: Record<keyof ConsultSignals, number> = {
+  open: 2,
+  empathy: 8,
+  plain: 3,
+  checks: 4,
+  jargon: -7,
+  dismissive: -12,
+  rude: -25,
+  stacked: -3,
+}
+/** At or below this trust the patient leaves. */
+export const WALKOUT_RAPPORT = 10
+/** The most facts one message can draw out (a "tell me everything" message can't empty the case). */
+export const MAX_FACTS_PER_TURN = 3
+/** Each made-up finding in the note costs this many points (at most three count). */
+export const FABRICATION_PENALTY = 2
+/** The least communication and note score (%) a consult needs to pass, whatever the total. */
+export const PASS_PART = 50
+
+export type NoteSection = 'S' | 'O' | 'A' | 'P'
+export const NOTE_SECTIONS: NoteSection[] = ['S', 'O', 'A', 'P']
+
+export type ConsultSpec = {
+  /** The history hub whose choices are the facts the patient can share */
+  node: string
+  /** The choice that ends the history (to the examination) */
+  moveOn: string
+  persona: {
+    /** How they talk */
+    voice: string
+    /** Non-clinical colour the patient may use freely */
+    background: string
+    worries: string[]
+    annoyances: string[]
+    /** A hint at the hidden worry, dropped once early on */
+    cue?: string
+    /** How to answer health questions the case doesn't cover */
+    unknown: string
+    language?: string
+    /** What happens if they leave (the ending) */
+    walkout: string
+  }
+  startRapport: number
+  /** Facts held back until trust is high enough; `deflect` is how they dodge it before then */
+  guarded: { choice: string; minRapport: number; deflect: string }[]
+  /** After the plan: the patient's questions and what a good explanation covers */
+  explain: { questions: string[]; items: { id: string; label: string; points: number }[] }
+  note: {
+    /** `finding`: only creditable if the learner found it (otherwise it was made up) */
+    rubric: { id: string; section: NoteSection; label: string; points: number; finding?: string }[]
+    model: Record<NoteSection, string>
+  }
+  /** A model consultation to compare with (draft until a physio signs the case off) */
+  expert: { label: string; transcript: { speaker: 'physio' | 'patient'; text: string; note?: string }[] }
+  maxTurns: number
+  explainTurns: number
+}
+
+export type ConsultStage = 'history' | 'case' | 'explain' | 'note' | 'done'
+
+export type NoteResult = {
+  met: string[]
+  quotes: Record<string, string>
+  fabricated: { text: string; why: string }[]
+  feedback: Record<NoteSection, string>
+  points: number
+  max: number
+  pct: number
+}
+
+export type ConsultCoach = {
+  moments: { turn: number; quote: string; what: string; tryInstead: string }[]
+  strengths: string[]
+  practise: string
+}
+
+export type ConsultState = {
+  stage: ConsultStage
+  rapport: number
+  /** Trust after each learner message (history, then explanation) */
+  rapportLog: number[]
+  turns: number
+  explainTurns: number
+  /** Guarded facts asked about before the patient trusted them */
+  deflected: string[]
+  jargon: string[]
+  signalCounts: Record<keyof ConsultSignals, number>
+  explainCovered: string[]
+  walkedOut: boolean
+  note: null | { sections: Record<NoteSection, string>; skipped: boolean }
+  noteResult: null | NoteResult
+  coach: null | ConsultCoach
+}
+
+const emptySignals = (): Record<keyof ConsultSignals, number> => ({
+  open: 0,
+  empathy: 0,
+  plain: 0,
+  checks: 0,
+  jargon: 0,
+  dismissive: 0,
+  rude: 0,
+  stacked: 0,
+})
+
+export function consultStart(def: SimCase): ConsultState {
+  const spec = def.consult
+  if (!spec) throw new SimError('invalid', 'This case has no consult mode.')
+  return {
+    stage: 'history',
+    rapport: clamp(spec.startRapport, 0, 100),
+    rapportLog: [],
+    turns: 0,
+    explainTurns: 0,
+    deflected: [],
+    jargon: [],
+    signalCounts: emptySignals(),
+    explainCovered: [],
+    walkedOut: false,
+    note: null,
+    noteResult: null,
+    coach: null,
+  }
+}
+
+/** How the patient feels at a trust level (the player shows this, never the number). */
+export type ConsultMood = 'at-ease' | 'okay' | 'uneasy' | 'upset'
+export function moodOf(rapport: number): ConsultMood {
+  if (rapport >= 70) return 'at-ease'
+  if (rapport >= 45) return 'okay'
+  if (rapport >= 25) return 'uneasy'
+  return 'upset'
+}
+
+/** Trust change for one message. */
+export function rapportDelta(signals: Partial<ConsultSignals>): number {
+  let d = 0
+  for (const key of SIGNAL_KEYS) if (signals[key]) d += RAPPORT_WEIGHTS[key]
+  return d
+}
+
+/** The facts the patient can talk about, with whether each is held back right now. */
+export type ConsultFact = { id: string; topic: string; answer: string; shared: boolean; locked: boolean; deflect: string | null }
+export function consultFacts(def: SimCase, state: SimState, consult: ConsultState): ConsultFact[] {
+  const spec = def.consult
+  const node = spec ? def.nodes[spec.node] : undefined
+  if (!spec || !node) return []
+  const taken = new Set(state.steps.map((s) => s.choiceId))
+  return (node.choices ?? [])
+    .filter((c) => c.id !== spec.moveOn && c.reply)
+    .map((c) => {
+      const guard = spec.guarded.find((g) => g.choice === c.id)
+      return {
+        id: c.id,
+        topic: c.label,
+        answer: c.reply!.text,
+        shared: taken.has(c.id),
+        locked: Boolean(guard && consult.rapport < guard.minRapport && !taken.has(c.id)),
+        deflect: guard?.deflect ?? null,
+      }
+    })
+}
+
+const unique = (xs: string[]) => [...new Set(xs)]
+
+function copyConsult(c: ConsultState): ConsultState {
+  return {
+    ...c,
+    rapportLog: [...c.rapportLog],
+    deflected: [...c.deflected],
+    jargon: [...c.jargon],
+    signalCounts: { ...c.signalCounts },
+    explainCovered: [...c.explainCovered],
+  }
+}
+
+export type ConsultTurnInput = { facts: string[]; signals: Partial<ConsultSignals>; jargon?: string[] }
+export type ConsultTurnResult = {
+  state: SimState
+  consult: ConsultState
+  /** Facts newly shared (applied as choices) */
+  applied: string[]
+  /** Guarded facts asked about too early */
+  locked: string[]
+  walkedOut: boolean
+}
+
+function countSignals(c: ConsultState, input: ConsultTurnInput) {
+  for (const key of SIGNAL_KEYS) if (input.signals[key]) c.signalCounts[key] += 1
+  const terms = (input.jargon ?? []).map((t) => t.trim().slice(0, 40)).filter(Boolean)
+  c.jargon = unique([...c.jargon, ...terms]).slice(0, 20)
+  c.rapport = clamp(c.rapport + rapportDelta(input.signals), 0, 100)
+  c.rapportLog.push(c.rapport)
+}
+
+/**
+ * One learner message during the history. The AI's verdict is only advice: facts outside the
+ * history node are dropped, at most MAX_FACTS_PER_TURN count, and guarded facts stay held back
+ * unless trust (before this message, as the patient answered) was high enough.
+ */
+export function applyConsultTurn(def: SimCase, state: SimState, consult: ConsultState, input: ConsultTurnInput, now: number): ConsultTurnResult {
+  const spec = def.consult
+  if (!spec) throw new SimError('invalid', 'This case has no consult mode.')
+  if (consult.stage !== 'history' || state.status !== 'active' || state.nodeId !== spec.node) {
+    throw new SimError('unavailable', 'The conversation has moved on.')
+  }
+  if (consult.turns >= spec.maxTurns) throw new SimError('unavailable', 'Time to examine the patient.')
+  const facts = consultFacts(def, state, consult)
+  const byId = new Map(facts.map((f) => [f.id, f]))
+  const asked = unique(input.facts.filter((id) => byId.has(id))).slice(0, MAX_FACTS_PER_TURN)
+  const locked = asked.filter((id) => byId.get(id)!.locked)
+  let s = state
+  const applied: string[] = []
+  for (const id of asked) {
+    const fact = byId.get(id)!
+    if (fact.locked || fact.shared) continue
+    s = applyChoice(def, s, id, now)
+    applied.push(id)
+  }
+  const c = copyConsult(consult)
+  c.turns += 1
+  c.deflected = unique([...c.deflected, ...locked])
+  countSignals(c, input)
+  if (c.rapport <= WALKOUT_RAPPORT) {
+    c.walkedOut = true
+    c.stage = 'done'
+  }
+  return { state: s, consult: c, applied, locked, walkedOut: c.walkedOut }
+}
+
+/** Ends the history: applies the move-on choice (to the examination). */
+export function consultMoveOn(def: SimCase, state: SimState, consult: ConsultState, now: number): { state: SimState; consult: ConsultState } {
+  const spec = def.consult
+  if (!spec || consult.stage !== 'history') throw new SimError('unavailable', 'The conversation has moved on.')
+  const next = applyChoice(def, state, spec.moveOn, now)
+  return { state: next, consult: { ...copyConsult(consult), stage: next.status === 'finished' ? 'explain' : 'case' } }
+}
+
+/** One learner message while explaining the plan: ticks checklist items and moves trust. */
+export function applyExplainTurn(def: SimCase, consult: ConsultState, input: ConsultTurnInput & { covered: string[] }): { consult: ConsultState; newlyCovered: string[] } {
+  const spec = def.consult
+  if (!spec || consult.stage !== 'explain') throw new SimError('unavailable', 'This part of the visit is over.')
+  if (consult.explainTurns >= spec.explainTurns) throw new SimError('unavailable', 'Time to write your note.')
+  const ids = new Set(spec.explain.items.map((i) => i.id))
+  const newlyCovered = unique(input.covered.filter((id) => ids.has(id) && !consult.explainCovered.includes(id)))
+  const c = copyConsult(consult)
+  c.explainTurns += 1
+  c.explainCovered = [...c.explainCovered, ...newlyCovered]
+  countSignals(c, input)
+  return { consult: c, newlyCovered }
+}
+
+/**
+ * The note's marks from the AI's ticks: unknown ids are ignored, and an item that depends on a
+ * finding the learner never found can't be met (writing it down means it was made up).
+ */
+export function scoreNote(
+  def: SimCase,
+  state: SimState,
+  verdict: { met: string[]; quotes?: Record<string, string>; fabricated?: { text: string; why: string }[]; feedback?: Partial<Record<NoteSection, string>> }
+): NoteResult {
+  const rubric = def.consult?.note.rubric ?? []
+  const found = new Set(state.findings)
+  const metSet = new Set(verdict.met)
+  const met = rubric.filter((r) => metSet.has(r.id) && (!r.finding || found.has(r.finding))).map((r) => r.id)
+  const max = rubric.reduce((sum, r) => sum + Math.max(0, r.points), 0)
+  const fabricated = (verdict.fabricated ?? []).filter((f) => f && f.text).slice(0, 3)
+  const earned = rubric.filter((r) => met.includes(r.id)).reduce((sum, r) => sum + r.points, 0)
+  const points = Math.max(0, earned - fabricated.length * FABRICATION_PENALTY)
+  const quotes: Record<string, string> = {}
+  for (const id of met) if (verdict.quotes?.[id]) quotes[id] = verdict.quotes[id].slice(0, 200)
+  const feedback = { S: '', O: '', A: '', P: '' } as Record<NoteSection, string>
+  for (const k of NOTE_SECTIONS) feedback[k] = (verdict.feedback?.[k] ?? '').slice(0, 400)
+  return { met, quotes, fabricated, feedback, points, max, pct: max > 0 ? clamp(Math.round((points / max) * 100), 0, 100) : 0 }
+}
+
+export type ConsultScores = { case: number; communication: number; explain: number; note: number; overall: number; passed: boolean }
+
+/** History time doesn't count against a consult: talking well takes longer than tapping. */
+const consultScore = (def: SimCase, state: SimState) => scoreState(def, state, { skipBudget: [def.nodes[def.consult?.node ?? '']?.phase ?? 'subjective'] })
+
+export function consultScores(def: SimCase, state: SimState, consult: ConsultState): ConsultScores {
+  const spec = def.consult
+  const score = consultScore(def, state)
+  const explainMax = spec ? spec.explain.items.reduce((s, i) => s + i.points, 0) : 0
+  const explainGot = spec ? spec.explain.items.filter((i) => consult.explainCovered.includes(i.id)).reduce((s, i) => s + i.points, 0) : 0
+  const explain = explainMax > 0 ? Math.round((explainGot / explainMax) * 100) : 0
+  const communication = consult.walkedOut ? Math.min(consult.rapport, 20) : Math.round(0.4 * consult.rapport + 0.6 * explain)
+  const note = consult.noteResult?.pct ?? 0
+  const overall = Math.round(0.5 * score.pct + 0.2 * communication + 0.3 * note)
+  // A safe case alone isn't a pass: the patient must have understood you, and the note must stand up
+  const passed = !consult.walkedOut && score.passed && overall >= def.passMark && communication >= PASS_PART && note >= PASS_PART
+  return { case: score.pct, communication, explain, note, overall, passed }
+}
+
+export type ConsultSkills = { history: number; safety: number; reasoning: number; communication: number; documentation: number }
+
+/** The skills radar for one consult (0–100 each). */
+export function consultSkills(def: SimCase, state: SimState, consult: ConsultState): ConsultSkills {
+  const index = choiceIndex(def)
+  const spec = def.consult
+  const historyNode = spec?.node
+  const taken = state.steps.map((s) => s.choiceId)
+  const pct = (got: number, max: number) => (max > 0 ? clamp(Math.round((got / max) * 100), 0, 100) : 0)
+  let hMax = 0
+  let rMax = 0
+  for (const id of def.expertPath) {
+    const hit = index.get(id)
+    if (!hit) continue
+    if (hit.node.id === historyNode) hMax += Math.max(0, hit.choice.points)
+    else rMax += Math.max(0, hit.choice.points)
+  }
+  let hGot = 0
+  let rGot = 0
+  for (const id of taken) {
+    const hit = index.get(id)
+    if (!hit) continue
+    if (hit.node.id === historyNode) hGot += Math.max(0, hit.choice.points)
+    else rGot += hit.choice.points
+  }
+  const done = def.mustDo.filter((id) => taken.includes(id)).length
+  const harmful = taken.some((id) => index.get(id)?.choice.tag === 'harmful')
+  const safety = pct(done, def.mustDo.length) * (harmful ? 0.5 : 1)
+  const scores = consultScores(def, state, consult)
+  return {
+    history: pct(hGot, hMax),
+    safety: Math.round(safety),
+    reasoning: pct(rGot, rMax),
+    communication: scores.communication,
+    documentation: scores.note,
+  }
+}
+
+/** The ending for a consult: the case's own, unless the patient walked out. */
+export function consultEnding(def: SimCase, state: SimState, consult: ConsultState): SimEnd {
+  if (consult.walkedOut) {
+    return { outcome: 'poor', title: `${def.patient.name.split(' ')[0]} walked out`, summary: def.consult?.persona.walkout ?? 'The patient left before you finished.' }
+  }
+  return endingOf(def, state) ?? { outcome: 'poor', title: 'Unfinished', summary: '' }
+}
+
+export type ConsultDebrief = {
+  scores: ConsultScores
+  skills: ConsultSkills
+  ending: SimEnd
+  rapportStart: number
+  rapportLog: number[]
+  /** Questions the expert asks that the learner didn't (in the expert's words) */
+  missedQuestions: { id: string; label: string; feedback: string; heldBack: boolean }[]
+  /** What the patient was holding back, and why it stayed hidden */
+  heldBack: { id: string; label: string; answer: string; askedTooEarly: boolean }[]
+  explain: { id: string; label: string; points: number; covered: boolean }[]
+  jargon: string[]
+  note: null | {
+    skipped: boolean
+    sections: Record<NoteSection, string>
+    result: NoteResult | null
+    rubric: { id: string; section: NoteSection; label: string; points: number; met: boolean; quote: string | null }[]
+    model: Record<NoteSection, string>
+  }
+  expert: ConsultSpec['expert'] | null
+  coach: ConsultCoach | null
+}
+
+export function buildConsultDebrief(def: SimCase, state: SimState, consult: ConsultState): ConsultDebrief {
+  const spec = def.consult!
+  const index = choiceIndex(def)
+  const taken = new Set(state.steps.map((s) => s.choiceId))
+  const guarded = new Map(spec.guarded.map((g) => [g.choice, g]))
+  const historyNode = def.nodes[spec.node]
+  const missedQuestions = def.expertPath
+    .map((id) => index.get(id))
+    .filter((hit): hit is IndexedChoice => Boolean(hit && hit.node.id === spec.node && hit.choice.id !== spec.moveOn && hit.choice.points > 0))
+    .filter((hit) => !taken.has(hit.choice.id))
+    .map((hit) => ({ id: hit.choice.id, label: hit.choice.label, feedback: hit.choice.feedback, heldBack: guarded.has(hit.choice.id) }))
+  const heldBack = spec.guarded
+    .filter((g) => !taken.has(g.choice))
+    .map((g) => {
+      const choice = (historyNode?.choices ?? []).find((c) => c.id === g.choice)
+      return { id: g.choice, label: choice?.label ?? g.choice, answer: choice?.reply?.text ?? '', askedTooEarly: consult.deflected.includes(g.choice) }
+    })
+  const result = consult.noteResult
+  return {
+    scores: consultScores(def, state, consult),
+    skills: consultSkills(def, state, consult),
+    ending: consultEnding(def, state, consult),
+    rapportStart: spec.startRapport,
+    rapportLog: consult.rapportLog,
+    missedQuestions,
+    heldBack,
+    explain: spec.explain.items.map((i) => ({ ...i, covered: consult.explainCovered.includes(i.id) })),
+    jargon: consult.jargon,
+    note: consult.note
+      ? {
+          skipped: consult.note.skipped,
+          sections: consult.note.sections,
+          result,
+          rubric: spec.note.rubric.map((r) => ({
+            id: r.id,
+            section: r.section,
+            label: r.label,
+            points: r.points,
+            met: Boolean(result?.met.includes(r.id)),
+            quote: result?.quotes[r.id] ?? null,
+          })),
+          model: spec.note.model,
+        }
+      : null,
+    expert: spec.expert ?? null,
+    coach: consult.coach,
+  }
+}
+
+function validateConsult(def: SimCase): string[] {
+  const spec = def.consult!
+  const problems: string[] = []
+  const say = (msg: string) => problems.push(`consult: ${msg}`)
+  if (def.mode !== 'full') say('only full cases can have a consult')
+  const node = def.nodes[spec.node]
+  if (!node) return [`consult: node "${spec.node}" doesn't exist`]
+  const ids = new Set((node.choices ?? []).map((c) => c.id))
+  if (!ids.has(spec.moveOn)) say(`moveOn "${spec.moveOn}" isn't a choice of "${spec.node}"`)
+  if (!node.lines?.length) say(`node "${spec.node}" needs an opening line (the patient speaks first)`)
+  for (const c of node.choices ?? []) {
+    if (c.id !== spec.moveOn && !c.reply) say(`choice "${c.id}" needs a reply (it's what the patient says)`)
+    if (c.id !== spec.moveOn && c.next !== spec.node) say(`choice "${c.id}" must stay in "${spec.node}"`)
+  }
+  for (const g of spec.guarded) {
+    if (!ids.has(g.choice)) say(`guarded "${g.choice}" isn't a choice of "${spec.node}"`)
+    if (g.minRapport <= WALKOUT_RAPPORT || g.minRapport > 100) say(`guarded "${g.choice}" needs minRapport between ${WALKOUT_RAPPORT + 1} and 100`)
+    if (!g.deflect) say(`guarded "${g.choice}" needs a deflect line`)
+  }
+  if (spec.startRapport <= WALKOUT_RAPPORT || spec.startRapport > 100) say('startRapport must be above the walk-out level')
+  if (!spec.persona?.voice || !spec.persona.unknown || !spec.persona.walkout) say('persona needs voice, unknown and walkout')
+  if (!(spec.maxTurns > 0) || !(spec.explainTurns > 0)) say('maxTurns and explainTurns must be above 0')
+  const explainIds = new Set<string>()
+  for (const item of spec.explain.items) {
+    if (explainIds.has(item.id)) say(`explain item "${item.id}" is used twice`)
+    explainIds.add(item.id)
+    if (!(item.points > 0)) say(`explain item "${item.id}" needs points`)
+  }
+  if (!spec.explain.questions.length) say('explain needs the patient’s questions')
+  const rubricIds = new Set<string>()
+  for (const r of spec.note.rubric) {
+    if (rubricIds.has(r.id)) say(`rubric item "${r.id}" is used twice`)
+    rubricIds.add(r.id)
+    if (!NOTE_SECTIONS.includes(r.section)) say(`rubric item "${r.id}" has an unknown section`)
+    if (r.finding && !def.findings[r.finding]) say(`rubric item "${r.id}" refers to missing finding "${r.finding}"`)
+    if (!(r.points > 0)) say(`rubric item "${r.id}" needs points`)
+  }
+  for (const k of NOTE_SECTIONS) if (!spec.note.model?.[k]) say(`model note needs section ${k}`)
+  if (!spec.expert?.transcript?.length) say('add the expert consultation')
   return problems
 }

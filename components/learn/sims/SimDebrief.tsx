@@ -20,6 +20,7 @@ import { pillInk, pillLime, pillOutline } from '../shared'
 import { DISCLAIMER, errorText, simApi, simPath, SIMULATIONS_PATH, simTrack } from './simApi'
 import { ShareReplayCard } from './replay/ShareReplay'
 import { DebriefCards, PlayerFrame } from './v2/parts'
+import { ConsultDebrief } from './consult/ConsultDebrief'
 
 function InterestCard({ slug, interested }: { slug: string; interested: boolean }) {
   const register = useMutation(simApi.registerInterest)
@@ -100,6 +101,8 @@ export function SimDebrief({ attemptId, slug }: { attemptId: string; slug: strin
       </div>
     )
   }
+  // A conversation ("talk to the patient") has its own debrief: coaching, the note, the transcript
+  if (data.consult) return <ConsultDebrief data={data} />
 
   const { debrief: d, case: c } = data
 

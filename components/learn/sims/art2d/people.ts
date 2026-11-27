@@ -19,6 +19,8 @@ const limb = (pts: [number, number][], color: string, width: number) =>
 
 type Skin = { base: string; shade: string; light: string }
 type Expression = 'calm' | 'uneasy' | 'worried' | 'pain' | 'breathless'
+/** How a talking patient looks right now ("talk to the patient" follows the conversation). */
+export type PersonMood = 'calm' | 'uneasy' | 'worried' | 'pain'
 type HeadSpec = {
   skin: Skin
   hair: 'bun' | 'fade' | 'grey'
@@ -216,7 +218,7 @@ const BLOUSE_SHADE = '#18704a'
 const SKIRT = '#1e1f26'
 
 /** Mrs Adebayo's seated body (on the couch edge), hands placed per pose. */
-function funmiSeated(pose: 'plinth' | 'worried') {
+function funmiSeated(pose: 'plinth' | 'worried', mood?: PersonMood) {
   const arms =
     pose === 'plinth'
       ? // Both hands gripping the couch edge, holding herself still
@@ -237,13 +239,13 @@ function funmiSeated(pose: 'plinth' | 'worried') {
     <path d="M676 352 Q700 334 760 332 Q820 334 844 352 L860 560 Q760 578 660 560 Z" fill="${BLOUSE}"/>
     <path d="M820 340 Q846 350 852 400 L860 560 Q836 566 814 568 Q830 460 820 340 Z" fill="#000" opacity="0.14"/>
     <path d="M728 338 L760 372 L792 338" fill="#f4f1ea"/><path d="M738 340 L760 362 L782 340" fill="${FUNMI_SKIN.shade}"/>
-    ${headSvg({ skin: FUNMI_SKIN, hair: 'bun', earrings: true, expression: pose === 'plinth' ? 'uneasy' : 'worried' })}
+    ${headSvg({ skin: FUNMI_SKIN, hair: 'bun', earrings: true, expression: mood ?? (pose === 'plinth' ? 'uneasy' : 'worried') })}
     ${arms}
   </g>`
 }
 
 /** Mrs Adebayo standing stiffly beside the couch, a hand pressed to her lower back. */
-function funmiStanding() {
+function funmiStanding(mood?: PersonMood) {
   // Raised and slightly bent forward: the whole upper body sits 60px higher than when seated
   return `
   <ellipse cx="760" cy="902" rx="150" ry="16" fill="${SHADOW}"/>
@@ -256,7 +258,7 @@ function funmiStanding() {
       <path d="M676 296 Q700 278 760 276 Q820 278 844 296 L858 508 Q760 526 662 508 Z" fill="${BLOUSE}"/>
       <path d="M820 284 Q846 294 852 344 L858 508 Q836 514 814 516 Q830 404 820 284 Z" fill="#000" opacity="0.14"/>
       <path d="M728 282 L760 316 L792 282" fill="#f4f1ea"/><path d="M738 284 L760 306 L782 284" fill="${FUNMI_SKIN.shade}"/>
-      ${headSvg({ skin: FUNMI_SKIN, hair: 'bun', earrings: true, expression: 'pain' }, 'translate(0 -56)')}
+      ${headSvg({ skin: FUNMI_SKIN, hair: 'bun', earrings: true, expression: mood ?? 'pain' }, 'translate(0 -56)')}
       <!-- her right hand pressed to her lower back (elbow out behind) -->
       ${limb([[676, 304], [628, 400], [664, 470]], BLOUSE, 46)}
       ${limb([[664, 468], [700, 484]], FUNMI_SKIN.base, 30)}
@@ -269,7 +271,7 @@ function funmiStanding() {
 }
 
 /** Tunde in his football kit, sitting up on the couch with his legs out, left ankle swollen on a pillow. */
-function tundeCouch() {
+function tundeCouch(mood: PersonMood = 'uneasy') {
   const jersey = '#1f8f4e'
   const jerseyShade = '#177442'
   return `
@@ -292,7 +294,7 @@ function tundeCouch() {
     <path d="M742 340 Q768 350 772 400 L776 556 Q754 562 736 564 Q750 460 742 340 Z" fill="${jerseyShade}"/>
     <path d="M652 334 L682 360 L712 334" fill="none" stroke="#ffffff" stroke-width="8" stroke-linejoin="round"/>
     <text x="682" y="470" text-anchor="middle" font-family="Arial, sans-serif" font-size="64" font-weight="800" fill="#ffffff">9</text>
-    ${headSvg({ skin: TUNDE_SKIN, hair: 'fade', male: true, expression: 'uneasy' }, 'translate(-78 0)')}
+    ${headSvg({ skin: TUNDE_SKIN, hair: 'fade', male: true, expression: mood }, 'translate(-78 0)')}
     <!-- arms: short sleeves, hands resting on his thighs -->
     ${limb([[598, 360], [580, 440]], jersey, 50)}${limb([[580, 436], [604, 500], [666, 524]], TUNDE_SKIN.base, 34)}
     <ellipse cx="676" cy="526" rx="22" ry="15" fill="${TUNDE_SKIN.light}"/>
@@ -333,7 +335,7 @@ function emekaTripod() {
 
 // ── Scenes ────────────────────────────────────────────────────────────────────
 
-export type PeopleArt = { character: 'funmi' | 'tunde' | 'emeka'; pose: string }
+export type PeopleArt = { character: 'funmi' | 'tunde' | 'emeka'; pose: string; mood?: PersonMood }
 
 /** Extra defs these people need (on top of clinicScene's). */
 export const PEOPLE_DEFS = `
@@ -349,7 +351,7 @@ export const PEOPLE_DEFS = `
  */
 export function peopleScene(art: PeopleArt, clinicRoom: (variant: 'clinic' | 'sports') => string): string {
   if (art.character === 'emeka') return `${wardRoom()}${wardBed()}${emekaTripod()}`
-  if (art.character === 'tunde') return `${clinicRoom('sports')}${couch('feet')}${tundeCouch()}`
-  if (art.pose === 'standing') return `${clinicRoom('clinic')}${couch()}${funmiStanding()}`
-  return `${clinicRoom('clinic')}${couch()}${funmiSeated(art.pose === 'worried' ? 'worried' : 'plinth')}`
+  if (art.character === 'tunde') return `${clinicRoom('sports')}${couch('feet')}${tundeCouch(art.mood)}`
+  if (art.pose === 'standing') return `${clinicRoom('clinic')}${couch()}${funmiStanding(art.mood)}`
+  return `${clinicRoom('clinic')}${couch()}${funmiSeated(art.pose === 'worried' ? 'worried' : 'plinth', art.mood)}`
 }

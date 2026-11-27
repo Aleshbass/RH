@@ -140,9 +140,9 @@ export function queueVoice(lines: { url: string; onStart?: () => void }[], whenD
 }
 
 /** Where the voice is right now (the line's URL and seconds into it), for lip sync. */
-export function voiceClock(): { url: string; t: number } | null {
+export function voiceClock(): { url: string; t: number; d: number } | null {
   if (!playing || !voiceEl || voiceEl.paused) return null
-  return { url: voiceEl.src, t: voiceEl.currentTime }
+  return { url: voiceEl.src, t: voiceEl.currentTime, d: voiceEl.duration }
 }
 
 export function stopVoice() {

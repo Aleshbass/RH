@@ -42,13 +42,33 @@ export type JsonRequest = {
   maxOutputTokens?: number;
   /** A public https image for the model to look at (blog alt text). OpenAI only; Gemini gets the text alone. */
   imageUrl?: string;
+  /** Another provider and model than the default (the Learn simulated patient has its own, simLlmConfig) */
+  config?: { provider: LlmProvider; model: string };
+  /** OpenAI reasoning effort for this call (else LLM_REASONING_EFFORT, else "low") */
+  reasoningEffort?: string;
 };
+
+/**
+ * The Learn simulated patient's model (convex/learnSimConsult.ts): SIM_LLM_PROVIDER and SIM_LLM_MODEL,
+ * else the same as everything else. Kept separate so the patient can run on a faster or stronger
+ * model than the scribe without touching it.
+ */
+export function simLlmConfig(): { provider: LlmProvider; model: string } {
+  const raw = (process.env.SIM_LLM_PROVIDER ?? "").trim().toLowerCase();
+  if (raw !== "openai" && raw !== "gemini") return llmConfig();
+  return { provider: raw, model: process.env.SIM_LLM_MODEL?.trim() || DEFAULT_MODELS[raw] };
+}
+
+/** Whether a provider's key is set on this deployment (no call made). */
+export function llmKeyPresent(provider: LlmProvider): boolean {
+  return Boolean((provider === "gemini" ? process.env.GEMINI_API_KEY : process.env.OPENAI_API_KEY)?.trim());
+}
 
 export type JsonReply = { text: string; provider: LlmProvider; model: string };
 
 /** Asks the model for a single JSON object and returns its raw text, to be parsed by the caller. */
 export async function callLlmJson(req: JsonRequest): Promise<JsonReply> {
-  const { provider, model } = llmConfig();
+  const { provider, model } = req.config ?? llmConfig();
   const text = provider === "gemini" ? await callGemini(model, req) : await callOpenAi(model, req);
   return { text, provider, model };
 }
@@ -72,7 +92,7 @@ async function callOpenAi(model: string, req: JsonRequest): Promise<string> {
       ],
       response_format: { type: "json_object" },
       max_completion_tokens: req.maxOutputTokens ?? 16_000,
-      ...reasoningEffort(model),
+      ...reasoningEffort(model, req.reasoningEffort),
       // Don't keep this conversation in OpenAI's stored completions
       store: false,
     },
@@ -91,9 +111,9 @@ async function callOpenAi(model: string, req: JsonRequest): Promise<string> {
  * OpenAI's reasoning models (gpt-5*, o1, o3, o4...) think before answering; "low" is quicker and
  * enough for a note. LLM_REASONING_EFFORT overrides it. Other models don't take the setting.
  */
-function reasoningEffort(model: string): { reasoning_effort?: string } {
+function reasoningEffort(model: string, override?: string): { reasoning_effort?: string } {
   if (!/^(gpt-5|o\d)/i.test(model)) return {};
-  return { reasoning_effort: process.env.LLM_REASONING_EFFORT?.trim() || "low" };
+  return { reasoning_effort: override?.trim() || process.env.LLM_REASONING_EFFORT?.trim() || "low" };
 }
 
 async function callGemini(model: string, req: JsonRequest): Promise<string> {

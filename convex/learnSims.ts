@@ -19,22 +19,29 @@ import {
   applyChoice,
   attachesMonitor,
   availableChoices,
+  buildConsultDebrief,
   choiceCategory,
   buildDebrief,
   choiceIndex,
+  consultEnding,
+  consultScores,
+  consultStart,
   endingOf,
   expire,
   MONITOR_FLAG,
+  moodOf,
   scoreState,
   SimError,
   startState,
   timeLimit,
   validateCase,
   vitalsTimeline,
+  type ConsultState,
   type SimCase,
   type SimLine,
   type SimState,
 } from "../lib/learn/simulation/engine";
+import { llmKeyPresent, simLlmConfig } from "./helpers/llm";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -54,7 +61,17 @@ async function requireMember(ctx: Ctx) {
 }
 
 /** Admins and Learn instructors can play drafts and sign cases off; only admins publish. */
-const isReviewer = (m: LearnMemberInfo | null) => Boolean(m && (m.isAdmin || m.user.role === "learn_instructor"));
+export const isReviewer = (m: LearnMemberInfo | null) => Boolean(m && (m.isAdmin || m.user.role === "learn_instructor"));
+
+/** "Talk to the patient" needs the case's consult block and an AI key on this deployment. */
+export function consultAvailable(def: SimCase) {
+  if (!def.consult || def.mode !== "full") return false;
+  try {
+    return llmKeyPresent(simLlmConfig().provider);
+  } catch {
+    return false;
+  }
+}
 
 async function requireReviewer(ctx: Ctx) {
   const member = await requireMember(ctx);
@@ -76,7 +93,7 @@ async function versionRow(ctx: Ctx, slug: string, version: number) {
     .first();
 }
 
-async function versionDef(ctx: Ctx, slug: string, version: number): Promise<SimCase | null> {
+export async function versionDef(ctx: Ctx, slug: string, version: number): Promise<SimCase | null> {
   const row = await versionRow(ctx, slug, version);
   return row ? (row.definition as SimCase) : null;
 }
@@ -97,6 +114,7 @@ function caseMeta(def: SimCase) {
     monitor: def.monitor,
     audio: Boolean(def.audio),
     cover: def.scenes ? (Object.values(def.scenes)[0] ?? null) : null,
+    consult: consultAvailable(def),
   };
 }
 
@@ -108,8 +126,19 @@ function lineView(def: SimCase, line: SimLine, audioId: string) {
 /** What the learner sees right now. Never includes points, tags or feedback. */
 function attemptView(def: SimCase, attempt: Doc<"learnSimAttempts">) {
   const state = attempt.state as SimState;
-  const status = attempt.status === "abandoned" ? ("abandoned" as const) : state.status;
+  // A consult stays open after the case's last choice (the explanation and the note come next)
+  const consult = attempt.mode === "consult" ? (attempt.consult as ConsultState) : null;
+  const status =
+    attempt.status === "abandoned"
+      ? ("abandoned" as const)
+      : consult
+        ? consult.stage === "done"
+          ? ("finished" as const)
+          : ("active" as const)
+        : state.status;
   const active = status === "active";
+  // In a consult the history is a conversation (no buttons) and nothing is tapped after the case
+  const tapping = active && (!consult || consult.stage === "case");
   const node = def.nodes[state.nodeId];
   const last = state.lastChoiceId ? choiceIndex(def).get(state.lastChoiceId)?.choice : undefined;
   const monitorOn = def.monitor && state.flags.includes(MONITOR_FLAG);
@@ -119,10 +148,10 @@ function attemptView(def: SimCase, attempt: Doc<"learnSimAttempts">) {
     preview: attempt.preview,
     case: caseMeta(def),
     node:
-      active && node
+      tapping && node
         ? { id: node.id, phase: node.phase, prompt: node.prompt, lines: (node.lines ?? []).map((l, i) => lineView(def, l, `${node.id}-${i}`)) }
         : null,
-    choices: active
+    choices: tapping
       ? availableChoices(def, state).map((c) => ({
           id: c.id,
           label: c.label,
@@ -147,13 +176,31 @@ function attemptView(def: SimCase, attempt: Doc<"learnSimAttempts">) {
     phases: def.phases.map((p) => ({ id: p.id, label: p.label, budgetSec: p.budgetSec, usedSec: state.phaseSec[p.id] ?? 0 })),
     scene: state.scene && def.scenes?.[state.scene] ? def.scenes[state.scene] : null,
     stepCount: state.steps.length,
-    ending: status === "finished" ? endingOf(def, state) : null,
+    ending: status === "finished" ? (consult ? consultEnding(def, state, consult) : endingOf(def, state)) : null,
+    mode: consult ? ("consult" as const) : ("classic" as const),
+    // Never the trust number or the facts: the mood the patient shows, and what's left
+    consult:
+      consult && def.consult
+        ? {
+            stage: consult.stage,
+            mood: moodOf(consult.rapport),
+            turnsLeft: Math.max(0, def.consult.maxTurns - consult.turns),
+            explainTurnsLeft: Math.max(0, def.consult.explainTurns - consult.explainTurns),
+            pendingAt: attempt.pendingAt ?? null,
+            walkedOut: consult.walkedOut,
+            patientFirstName: def.speakers.patient?.name ?? def.patient.name.split(" ")[0],
+            // The opening line was recorded with the case's voices (history node, line 0)
+            openingAudio: def.audio ? `${def.consult.node}-0` : null,
+            // The patient's replies can be spoken live (ElevenLabs, in the case's own voice)
+            voice: Boolean(def.speakers.patient?.voice && process.env.ELEVENLABS_API_KEY?.trim()),
+          }
+        : null,
   };
 }
 
 export type SimAttemptView = ReturnType<typeof attemptView>;
 
-async function ownAttempt(ctx: Ctx, attemptId: string) {
+export async function ownAttempt(ctx: Ctx, attemptId: string) {
   const member = await memberOrNull(ctx);
   const id = ctx.db.normalizeId("learnSimAttempts", attemptId);
   const attempt = id ? await ctx.db.get(id) : null;
@@ -178,8 +225,35 @@ async function rateLimit(ctx: MutationCtx, userId: Id<"users">) {
   await ctx.db.patch(row._id, { count: row.count + 1 });
 }
 
+/** Learn points and the case's running totals for a finished, scored run (not for previews). */
+async function recordFinish(ctx: MutationCtx, attempt: Doc<"learnSimAttempts">, def: SimCase, pct: number, passed: boolean) {
+  if (attempt.preview) return;
+  // Learn points: once per case for finishing, once per case for passing
+  await awardLearnPoints(ctx, { userId: attempt.userId, reason: "sim_finish", key: `simfinish:${attempt.userId}:${attempt.caseSlug}`, label: `Finished: ${def.title}` });
+  if (passed) {
+    await awardLearnPoints(ctx, { userId: attempt.userId, reason: "sim_pass", key: `simpass:${attempt.userId}:${attempt.caseSlug}`, label: `Passed: ${def.title}` });
+  }
+  const doc = await caseBySlug(ctx, attempt.caseSlug);
+  if (doc) {
+    await ctx.db.patch(doc._id, {
+      completions: doc.completions + 1,
+      passes: doc.passes + (passed ? 1 : 0),
+      scoreSum: doc.scoreSum + pct,
+    });
+  }
+}
+
 /** Saves a new state; on finishing, records the score and the case's running totals. */
 async function saveState(ctx: MutationCtx, attempt: Doc<"learnSimAttempts">, def: SimCase, state: SimState, now: number) {
+  if (attempt.mode === "consult") {
+    // The case is over but the visit isn't: the learner explains the plan, then writes the note
+    const consult = attempt.consult as ConsultState;
+    if (state.status === "finished" && consult.stage === "case") {
+      await ctx.db.patch(attempt._id, { state, consult: { ...consult, stage: "explain" } });
+      await enterExplain(ctx, attempt._id, def);
+    } else await ctx.db.patch(attempt._id, { state });
+    return;
+  }
   if (state.status !== "finished") {
     await ctx.db.patch(attempt._id, { state });
     return;
@@ -193,20 +267,57 @@ async function saveState(ctx: MutationCtx, attempt: Doc<"learnSimAttempts">, def
     outcome: score.outcome,
     finishedAt: now,
   });
-  if (attempt.preview) return;
-  // Learn points: once per case for finishing, once per case for passing
-  await awardLearnPoints(ctx, { userId: attempt.userId, reason: "sim_finish", key: `simfinish:${attempt.userId}:${attempt.caseSlug}`, label: `Finished: ${def.title}` });
-  if (score.passed) {
-    await awardLearnPoints(ctx, { userId: attempt.userId, reason: "sim_pass", key: `simpass:${attempt.userId}:${attempt.caseSlug}`, label: `Passed: ${def.title}` });
-  }
-  const doc = await caseBySlug(ctx, attempt.caseSlug);
-  if (doc) {
-    await ctx.db.patch(doc._id, {
-      completions: doc.completions + 1,
-      passes: doc.passes + (score.passed ? 1 : 0),
-      scoreSum: doc.scoreSum + score.pct,
-    });
-  }
+  await recordFinish(ctx, attempt, def, score.pct, score.passed);
+}
+
+// ── Consult helpers (convex/learnSimConsult.ts runs the conversation) ────────
+
+/** Adds a message to a consult's conversation; returns its position. */
+export async function addTurn(
+  ctx: MutationCtx,
+  attemptId: Id<"learnSimAttempts">,
+  row: Omit<Doc<"learnSimTurns">, "_id" | "_creationTime" | "attemptId" | "index" | "at">
+): Promise<number> {
+  const last = await ctx.db
+    .query("learnSimTurns")
+    .withIndex("by_attempt", (q) => q.eq("attemptId", attemptId))
+    .order("desc")
+    .first();
+  const index = (last?.index ?? -1) + 1;
+  await ctx.db.insert("learnSimTurns", { attemptId, index, at: Date.now(), ...row });
+  return index;
+}
+
+const pronoun = (def: SimCase) => (def.patient.sex === "F" ? "her" : "him");
+
+/** The plan is made: the patient asks their first question. */
+async function enterExplain(ctx: MutationCtx, attemptId: Id<"learnSimAttempts">, def: SimCase) {
+  const first = def.speakers.patient?.name ?? def.patient.name.split(" ")[0];
+  await addTurn(ctx, attemptId, {
+    stage: "explain",
+    role: "system",
+    text: `You’ve examined ${first} and made your plan. Now explain it to ${pronoun(def)} and answer ${pronoun(def) === "her" ? "her" : "his"} questions.`,
+  });
+  const question = def.consult?.explain.questions[0];
+  if (question) await addTurn(ctx, attemptId, { stage: "explain", role: "patient", text: question, emotion: "worried" });
+}
+
+/** Closes a consult: the combined score, the attempt finished, points and totals. */
+export async function finalizeConsult(ctx: MutationCtx, attempt: Doc<"learnSimAttempts">, def: SimCase, state: SimState, consult: ConsultState) {
+  const done: ConsultState = { ...consult, stage: "done" };
+  const scores = consultScores(def, state, done);
+  const ending = consultEnding(def, state, done);
+  await ctx.db.patch(attempt._id, {
+    state,
+    consult: done,
+    status: "finished",
+    scorePct: scores.overall,
+    passed: scores.passed,
+    outcome: ending.outcome,
+    finishedAt: Date.now(),
+    pendingAt: undefined,
+  });
+  await recordFinish(ctx, attempt, def, scores.overall, scores.passed);
 }
 
 // ── Learners ──────────────────────────────────────────────────────────────────
@@ -268,7 +379,7 @@ export const listCases = query({
 
 /** Starts a case (any unfinished attempt at the same case is closed: one at a time). */
 export const startAttempt = mutation({
-  args: { slug: v.string(), preview: v.optional(v.boolean()) },
+  args: { slug: v.string(), preview: v.optional(v.boolean()), mode: v.optional(v.literal("consult")) },
   handler: async (ctx, args) => {
     const member = await requireMember(ctx);
     const doc = await caseBySlug(ctx, args.slug);
@@ -278,6 +389,8 @@ export const startAttempt = mutation({
     const version = preview ? doc.version : doc.published!.version;
     const def = await versionDef(ctx, doc.slug, version);
     if (!def) throw new ConvexError("This case is being updated. Try again shortly.");
+    const consult = args.mode === "consult";
+    if (consult && !consultAvailable(def)) throw new ConvexError("Talking to this patient isn’t available right now. Try the case with taps instead.");
     await rateLimit(ctx, member.user._id);
 
     const now = Date.now();
@@ -296,7 +409,15 @@ export const startAttempt = mutation({
       state: startState(def, now),
       status: "active",
       startedAt: now,
+      ...(consult ? { mode: "consult" as const, consult: consultStart(def) } : {}),
     });
+    if (consult) {
+      // The patient speaks first (the history node's opening lines)
+      const node = def.nodes[def.consult!.node];
+      for (const line of node?.lines ?? []) {
+        if (line.speaker === "patient") await addTurn(ctx, attemptId, { stage: "history", role: "patient", text: line.text, emotion: "worried" });
+      }
+    }
     if (!preview) await ctx.db.patch(doc._id, { plays: doc.plays + 1 });
     return { attemptId, serverNow: now };
   },
@@ -318,6 +439,10 @@ export const choose = mutation({
     if (!own) throw new ConvexError("This attempt isn't available.");
     const { attempt, def } = own;
     if (attempt.status !== "active") throw new ConvexError("This attempt has ended.");
+    // In a consult, taps are only for the examination and the plan
+    if (attempt.mode === "consult" && (attempt.consult as ConsultState).stage !== "case") {
+      throw new ConvexError("That part of the visit is a conversation.");
+    }
     const before = attempt.state as SimState;
     const now = Date.now();
     let next: SimState;
@@ -379,14 +504,42 @@ export const getDebrief = query({
         .withIndex("by_user", (q) => q.eq("userId", member.user._id))
         .first()
     );
+    const state = attempt.state as SimState;
+    let consult = null;
+    if (attempt.mode === "consult" && def.consult) {
+      const turns = await ctx.db
+        .query("learnSimTurns")
+        .withIndex("by_attempt", (q) => q.eq("attemptId", attempt._id))
+        .take(300);
+      const index = choiceIndex(def);
+      consult = {
+        ...buildConsultDebrief(def, state, attempt.consult as ConsultState),
+        patientFirstName: def.speakers.patient?.name ?? def.patient.name.split(" ")[0],
+        transcript: turns.map((t) => ({
+          index: t.index,
+          stage: t.stage,
+          role: t.role,
+          text: t.text,
+          emotion: t.emotion ?? null,
+          signals: t.signals ?? null,
+          jargon: t.jargon ?? [],
+          // In the expert's words: which questions this message counted as
+          asked: (t.asked ?? []).map((id) => index.get(id)?.choice.label ?? id),
+          rapport: t.rapport ?? null,
+        })),
+      };
+    }
     return {
       attemptId: attempt._id,
       preview: attempt.preview,
       case: caseMeta(def),
-      debrief: buildDebrief(def, attempt.state as SimState),
+      debrief: buildDebrief(def, state),
       best,
       average: doc && doc.completions > 0 ? Math.round(doc.scoreSum / doc.completions) : null,
       interested,
+      score: attempt.scorePct ?? null,
+      passed: attempt.passed ?? false,
+      consult,
     };
   },
 });

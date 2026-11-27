@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { voiceClock } from '../simAudio'
-import { audioIdOf, shapeAt, type LipTimings } from '../talkingFace'
+import { audioIdOf, liveShapeAt, shapeAt, type LipTimings } from '../talkingFace'
 import { sceneSvg, type Art2dSpec } from './clinicScene'
 
 const lipsCache = new Map<string, Promise<LipTimings | null>>()
@@ -44,7 +44,7 @@ export function Clinic2D({
   const [lips, setLips] = useState<LipTimings | null>(null)
   const talkingRef = useRef(talking)
   talkingRef.current = talking
-  const markup = useMemo(() => sceneSvg(art), [art.character, art.pose]) // eslint-disable-line react-hooks/exhaustive-deps
+  const markup = useMemo(() => sceneSvg(art), [art.character, art.pose, art.mood]) // eslint-disable-line react-hooks/exhaustive-deps
   // One object per drawing: React 19 rewrites innerHTML whenever this object changes (even with the
   // same text), which swapped in a fresh SVG on every re-render, so the lips, eyes and phone framing
   // were moving a detached copy and froze after the first line (owner 2026-11-26)
@@ -113,7 +113,10 @@ export function Clinic2D({
     const tick = () => {
       frame = requestAnimationFrame(tick)
       const clock = talkingRef.current ? voiceClock() : null
-      show(clock ? shapeAt(lips, audioIdOf(clock.url), clock.t) : 'x')
+      if (!clock) return show('x')
+      // Recorded lines have timings; live replies (talk to the patient) follow their words
+      const id = audioIdOf(clock.url)
+      show(lips?.lines[id] ? shapeAt(lips, id, clock.t) : (liveShapeAt(clock.url, clock.t, clock.d) ?? 'x'))
     }
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)

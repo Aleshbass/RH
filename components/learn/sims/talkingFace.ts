@@ -55,6 +55,43 @@ export function shapeAt(lips: LipTimings | null, audioId: string | null, t: numb
   return line[Math.floor(t * (lips.fps || 25))] ?? 'x'
 }
 
+// ── Live replies ("talk to the patient", spoken on the fly: no lips.json) ──────
+
+/**
+ * Mouth shapes from the words themselves: vowels open the mouth (a / e / o), m-b-p close it, other
+ * consonants show the teeth, and punctuation rests it. Played back stretched over the audio's length,
+ * it reads as speech at the size the face is drawn.
+ */
+export function textShapes(text: string): string {
+  let out = ''
+  for (const ch of text.toLowerCase()) {
+    if ('a'.includes(ch)) out += 'aa'
+    else if ('eiy'.includes(ch)) out += 'ee'
+    else if ('ouw'.includes(ch)) out += 'oo'
+    else if ('mbp'.includes(ch)) out += 'm'
+    else if (/[a-z]/.test(ch)) out += 'e'
+    else if (/[.,!?;:…]/.test(ch)) out += 'xxxx'
+    else if (/\s/.test(ch)) out += 'x'
+  }
+  return out || 'x'
+}
+
+const liveLines = new Map<string, string>()
+
+/** A live reply's audio (a blob: URL) and what it says, so the lips can follow it. */
+export function registerLiveLine(url: string, text: string) {
+  liveLines.set(url, textShapes(text))
+  // Keep the last few only
+  while (liveLines.size > 40) liveLines.delete(liveLines.keys().next().value as string)
+}
+
+/** The shape for a live reply at `t` of `duration` seconds, or null if it isn't one. */
+export function liveShapeAt(url: string, t: number, duration: number): string | null {
+  const shapes = liveLines.get(url)
+  if (!shapes || !(duration > 0) || !Number.isFinite(duration)) return null
+  return shapes[Math.min(shapes.length - 1, Math.floor((t / duration) * shapes.length))] ?? 'x'
+}
+
 /** The audio id of a voice URL: ".../v1/q-pain.mp3" -> "q-pain". */
 export function audioIdOf(url: string): string {
   const file = url.split('?')[0].split('/').pop() ?? ''
