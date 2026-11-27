@@ -15,6 +15,7 @@ import {
   consultScores,
   consultSkills,
   consultStart,
+  findJargon,
   MAX_FACTS_PER_TURN,
   moodOf,
   scoreNote,
@@ -71,6 +72,24 @@ test('the hidden worry stays hidden until he trusts you, and asking too early is
   r = applyConsultTurn(ankle, r.state, r.consult, turn(['a-worry'], { open: true }), 0)
   assert.deepEqual(r.applied, ['a-worry'])
   assert.ok(r.state.findings.includes('f-worry'))
+})
+
+test('clinical words count as jargon even if the AI misses them, unless explained', () => {
+  assert.deepEqual(findJargon('Did you sustain an inversion injury with ATFL involvement?'), ['ATFL', 'inversion'])
+  assert.deepEqual(findJargon('Any paraesthesia or neurovascular compromise distally?'), ['paraesthesia', 'neurovascular', 'distally'])
+  assert.deepEqual(findJargon('Is there a history of recurrent lateral ligament instability?'), ['lateral', 'instability', 'recurrent'])
+  assert.deepEqual(findJargon('You’ve sprained the ligament on the outside of your ankle, not broken it.'), [], 'plain words')
+  assert.deepEqual(findJargon('The ATFL, which means the ligament on the outside, is sprained.'), [], 'explained in the same breath')
+  assert.deepEqual(findJargon('Can you take a few steps? Any pain?'), [], 'no false alarm on short words (PE, ACL…)')
+})
+
+test('a warm question opens him up in one go (trust is judged after the message)', () => {
+  const { state, consult } = begin()
+  assert.equal(consultFacts(ankle, state, consult).find((f) => f.id === 'a-worry').warmUnlocks, true)
+  const cold = applyConsultTurn(ankle, state, consult, turn(['a-worry'], { open: true }), 0)
+  assert.deepEqual(cold.locked, ['a-worry'], 'an open question alone (55 + 2) isn’t enough')
+  const warm = applyConsultTurn(ankle, state, consult, turn(['a-worry'], { open: true, empathy: true }), 0)
+  assert.deepEqual(warm.applied, ['a-worry'], '55 + 2 + 8 reaches 60')
 })
 
 test('jargon and dismissiveness cost trust; low enough and he walks out', () => {

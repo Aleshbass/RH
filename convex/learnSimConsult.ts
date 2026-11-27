@@ -18,6 +18,8 @@ import { callLlmJson, simLlmConfig, transcribeAudioChunk, type LlmProvider } fro
 import {
   coachPrompt,
   conversationText,
+  creditedCovered,
+  creditedFacts,
   explainSystemPrompt,
   noteMarkingPrompt,
   noteText,
@@ -30,6 +32,7 @@ import {
   type TurnLine,
 } from "./helpers/simConsultPrompts";
 import {
+  applyChoice,
   applyConsultTurn,
   applyExplainTurn,
   buildConsultDebrief,
@@ -37,6 +40,7 @@ import {
   consultFacts,
   consultMoveOn,
   consultStart,
+  findJargon,
   moodOf,
   NOTE_SECTIONS,
   scoreNote,
@@ -61,10 +65,31 @@ const dailyLimit = () => {
   const n = Number(process.env.SIM_AI_DAILY_LIMIT);
   return Number.isFinite(n) && n > 0 ? n : 300;
 };
-/** OpenAI reasoning effort for the patient's replies (quick); marking and coaching think a bit more. */
-const replyEffort = () => process.env.SIM_LLM_REASONING_EFFORT?.trim() || "low";
+/**
+ * OpenAI reasoning effort for the patient's replies; marking and coaching think more ("low").
+ * "minimal" by default: in the live test (27 Nov, gpt-5-mini) it gave the same facts and signals as
+ * "low" at 1.7 s a reply instead of 4.5 s, which matters in a spoken conversation.
+ */
+const replyEffort = () => process.env.SIM_LLM_REASONING_EFFORT?.trim() || "minimal";
 
 const clean = (s: string, max: number) => s.replace(/\s+/g, " ").trim().slice(0, max);
+
+/** Clinical words from the fixed list count as jargon even when the AI misses them. */
+function withJargon<T extends { signals: ConsultSignals; jargon: string[] }>(verdict: T, said: string): T {
+  const found = findJargon(said);
+  if (!found.length) return verdict;
+  return { ...verdict, signals: { ...verdict.signals, jargon: true }, jargon: [...new Set([...verdict.jargon, ...found])].slice(0, 8) };
+}
+
+/** What the patient said first and why they came: words from here don't prove a fact was answered. */
+function evidenceContext(def: SimCase): string {
+  return `${openingWords(def)} ${def.patient.presentingComplaint}`;
+}
+
+/** What the patient says before any question (the history node's opening lines). */
+function openingWords(def: SimCase): string {
+  return (def.nodes[def.consult?.node ?? ""]?.lines ?? []).map((l) => l.text).join(" ");
+}
 
 function profileOf(def: SimCase): PatientProfile {
   return {
@@ -128,7 +153,8 @@ const lines = (rows: Doc<"learnSimTurns">[]): TurnLine[] => rows.map((r) => ({ i
 
 type ModelConfig = { provider: LlmProvider; model: string };
 type BeginTurn = { stage: "history" | "explain"; system: string; user: string; firstName: string; physioIndex: number; model: ModelConfig };
-type Verdict = { reply: string; facts: string[]; covered: string[]; signals: ConsultSignals; jargon: string[]; emotion: string };
+type Evidence = { id: string; quote: string };
+type Verdict = { reply: string; facts: Evidence[]; covered: Evidence[]; signals: ConsultSignals; jargon: string[]; emotion: string };
 type TurnResult = { walkedOut: boolean; stage: string };
 type BeginNote = { skip: boolean; markSystem: string; noteUser: string; coachSystem: string; physioTurns: TurnLine[]; model: ModelConfig };
 
@@ -231,8 +257,8 @@ export const finishTurn = internalMutation({
     stage: v.union(v.literal("history"), v.literal("explain")),
     verdict: v.object({
       reply: v.string(),
-      facts: v.array(v.string()),
-      covered: v.array(v.string()),
+      facts: v.array(v.object({ id: v.string(), quote: v.string() })),
+      covered: v.array(v.object({ id: v.string(), quote: v.string() })),
       signals: v.any(),
       jargon: v.array(v.string()),
       emotion: v.string(),
@@ -242,20 +268,23 @@ export const finishTurn = internalMutation({
     const { attempt, def, consult, state } = await openConsult(ctx, args.attemptId);
     const sent = await turnAt(ctx, attempt._id, args.physioIndex);
     if (!sent || consult.stage !== args.stage) throw new ConvexError("The conversation moved on.");
-    const verdict = args.verdict;
+    const verdict = withJargon(args.verdict, sent.text);
     const now = Date.now();
 
     if (args.stage === "history") {
+      // Only facts the reply really gave count (their quote must be in it)
+      const offered = consultFacts(def, state, consult);
+      const asked = creditedFacts(verdict, new Set(offered.filter((f) => f.locked).map((f) => f.id)), new Map(offered.map((f) => [f.id, f.answer])), evidenceContext(def));
       let result;
       try {
-        result = applyConsultTurn(def, state, consult, { facts: verdict.facts, signals: verdict.signals, jargon: verdict.jargon }, now);
+        result = applyConsultTurn(def, state, consult, { facts: asked, signals: verdict.signals, jargon: verdict.jargon }, now);
       } catch (err) {
         if (err instanceof SimError) throw new ConvexError(err.message);
         throw err;
       }
       const index = choiceIndex(def);
-      const valid = new Set(consultFacts(def, state, consult).map((f) => f.id));
-      await ctx.db.patch(sent._id, { asked: verdict.facts.filter((id) => valid.has(id)).slice(0, 3), signals: verdict.signals, jargon: verdict.jargon, rapport: result.consult.rapport });
+      const valid = new Set(offered.map((f) => f.id));
+      await ctx.db.patch(sent._id, { asked: asked.filter((id) => valid.has(id)).slice(0, 3), signals: verdict.signals, jargon: verdict.jargon, rapport: result.consult.rapport });
       const found = result.applied.flatMap((id) => index.get(id)?.choice.reveals ?? []);
       await addTurn(ctx, attempt._id, { stage: "history", role: "patient", text: verdict.reply, emotion: verdict.emotion, found });
       if (result.walkedOut) {
@@ -269,7 +298,7 @@ export const finishTurn = internalMutation({
 
     let result;
     try {
-      result = applyExplainTurn(def, consult, { facts: [], signals: verdict.signals, jargon: verdict.jargon, covered: verdict.covered });
+      result = applyExplainTurn(def, consult, { facts: [], signals: verdict.signals, jargon: verdict.jargon, covered: creditedCovered(verdict, sent.text) });
     } catch (err) {
       if (err instanceof SimError) throw new ConvexError(err.message);
       throw err;
@@ -382,7 +411,7 @@ export const beginNote = internalMutation({
       .map((s) => index.get(s.choiceId))
       .filter((hit) => hit && hit.node.id !== spec.node && hit.choice.costSec > 0)
       .map((hit) => hit!.choice.label);
-    const markSystem = noteMarkingPrompt({ title: def.title, patient: p, found: found.map((f) => ({ label: f.label, detail: f.detail })), notFound, decisions, rubric: spec.note.rubric });
+    const markSystem = noteMarkingPrompt({ title: def.title, patient: p, opening: openingWords(def), found: found.map((f) => ({ label: f.label, detail: f.detail })), notFound, decisions, rubric: spec.note.rubric });
 
     const rows = await turnsOf(ctx, attempt._id, 200);
     const debrief = buildConsultDebrief(def, state, consult);
@@ -483,14 +512,26 @@ const SCRIPTS: Record<string, string[]> = {
   ],
 };
 
+const SELFTEST_EXPLAIN = [
+  "Good news: it's not broken. You've sprained the ligament on the outside of your ankle, the band that holds the joint together.",
+  "You don't need an X-ray. The checks I did on the bones show a break is very unlikely, so an X-ray would only cost you money. I'll write a note for your coach.",
+  "I know the final matters so much for your scholarship. You'll go back when you can hop and run without pain, not on a date. Wear the brace, walk as much as the pain allows, and do the exercises I'll show you. Come back sooner if you can't walk on it in a week, or it gets worse. Can you tell me what you'll do at home?",
+];
+const SELFTEST_NOTE = {
+  S: "22yo striker, inversion injury L ankle yesterday landing on opponent's foot, pop laterally. Couldn't WB initially, now few steps with limp. 2 previous sprains. Goal: final in 3/52. Worried about losing scholarship. No numbness/tingling/calf pain.",
+  O: "Swelling and bruising laterally. Ottawa negative, tender ATFL. Squeeze and ER tests negative. Ant drawer increased laxity. Pulses and sensation normal. PSFS running 0, kicking 2, stairs 4.",
+  A: "L lateral ankle sprain (ATFL), fracture unlikely (Ottawa negative). High risk of recurrence (3rd sprain).",
+  P: "No X-ray. Brace, WB as tolerated, early ROM, progressive loading, balance training. RTS on criteria not date. Safety net given. Review 5 days.",
+};
+
 export const selfTest = internalAction({
-  args: { script: v.string(), slug: v.optional(v.string()) },
+  args: { script: v.string(), slug: v.optional(v.string()), effort: v.optional(v.string()), model: v.optional(v.string()), full: v.optional(v.boolean()) },
   handler: async (_ctx, args) => {
     const def = SIM_CASES.find((c) => c.slug === (args.slug ?? "ankle-sprain-after-football"));
     const script = SCRIPTS[args.script];
     if (!def?.consult || !script) throw new ConvexError("Unknown case or script.");
     const p = profileOf(def);
-    const model = simLlmConfig();
+    const model = args.model ? { provider: "openai" as const, model: args.model } : simLlmConfig();
     let state = startState(def, Date.now());
     let consult = consultStart(def);
     const turns: TurnLine[] = (def.nodes[def.consult.node]?.lines ?? []).map((l, i) => ({ index: i, role: "patient" as const, text: l.text }));
@@ -498,20 +539,24 @@ export const selfTest = internalAction({
     for (const message of script) {
       const system = patientSystemPrompt({ patient: p, spec: def.consult, facts: consultFacts(def, state, consult), mood: moodOf(consult.rapport), rapport: consult.rapport, cueUsed: consult.turns >= 4 });
       const started = Date.now();
-      const reply = await callLlmJson({ system, user: conversationText(turns, p.firstName, message), maxOutputTokens: 4000, config: model, reasoningEffort: replyEffort() });
-      const verdict = parsePatientVerdict(reply.text, p.firstName);
+      const reply = await callLlmJson({ system, user: conversationText(turns, p.firstName, message), maxOutputTokens: 4000, config: model, reasoningEffort: args.effort ?? replyEffort() });
+      const parsed = parsePatientVerdict(reply.text, p.firstName);
+      const verdict = parsed && withJargon(parsed, message);
       if (!verdict) {
         log.push({ message, error: "unreadable reply" });
         continue;
       }
-      const r = applyConsultTurn(def, state, consult, { facts: verdict.facts, signals: verdict.signals, jargon: verdict.jargon }, Date.now());
+      const offered = consultFacts(def, state, consult);
+      const credited = creditedFacts(verdict, new Set(offered.filter((f) => f.locked).map((f) => f.id)), new Map(offered.map((f) => [f.id, f.answer])), evidenceContext(def));
+      const r = applyConsultTurn(def, state, consult, { facts: credited, signals: verdict.signals, jargon: verdict.jargon }, Date.now());
       state = r.state;
       consult = r.consult;
       turns.push({ index: turns.length, role: "physio", text: message }, { index: turns.length + 1, role: "patient", text: verdict.reply });
       log.push({
         message,
         reply: verdict.reply,
-        asked: verdict.facts,
+        claimed: verdict.facts.map((f) => f.id),
+        asked: credited,
         applied: r.applied,
         held: r.locked,
         signals: SIGNAL_NAMES.filter((k) => verdict.signals[k]),
@@ -522,7 +567,63 @@ export const selfTest = internalAction({
       });
       if (r.walkedOut) break;
     }
-    return { model, walkedOut: consult.walkedOut, findings: state.findings, log };
+    if (!args.full || consult.walkedOut) return { model, walkedOut: consult.walkedOut, findings: state.findings, log };
+
+    // The expert's examination and plan, then the explanation, the note and the coaching
+    ({ state, consult } = consultMoveOn(def, state, consult, Date.now()));
+    for (const id of def.expertPath.slice(def.expertPath.indexOf(def.consult.moveOn) + 1)) state = applyChoice(def, state, id, Date.now());
+    consult = { ...consult, stage: "explain" };
+    const question = def.consult.explain.questions[0];
+    turns.push({ index: turns.length, role: "patient", text: question });
+    const explainLog = [];
+    for (const message of SELFTEST_EXPLAIN) {
+      const system = explainSystemPrompt({ patient: p, spec: def.consult, mood: moodOf(consult.rapport), rapport: consult.rapport, covered: consult.explainCovered, knownFacts: [] });
+      const reply = await callLlmJson({ system, user: conversationText(turns, p.firstName, message), maxOutputTokens: 4000, config: model, reasoningEffort: args.effort ?? replyEffort() });
+      const parsed = parsePatientVerdict(reply.text, p.firstName);
+      if (!parsed) {
+        explainLog.push({ message, error: "unreadable reply" });
+        continue;
+      }
+      const verdict = withJargon(parsed, message);
+      const r = applyExplainTurn(def, consult, { facts: [], signals: verdict.signals, jargon: verdict.jargon, covered: creditedCovered(verdict, message) });
+      consult = r.consult;
+      turns.push({ index: turns.length, role: "physio", text: message }, { index: turns.length + 1, role: "patient", text: verdict.reply });
+      explainLog.push({ message, reply: verdict.reply, claimed: verdict.covered.map((c) => c.id), covered: r.newlyCovered, signals: SIGNAL_NAMES.filter((k) => verdict.signals[k]) });
+    }
+    const index = choiceIndex(def);
+    const found = state.findings.map((id) => def.findings[id]).filter(Boolean);
+    const markSystem = noteMarkingPrompt({
+      title: def.title,
+      patient: p,
+      opening: openingWords(def),
+      found: found.map((f) => ({ label: f.label, detail: f.detail })),
+      notFound: Object.values(def.findings).filter((f) => !state.findings.includes(f.id)).map((f) => f.label),
+      decisions: state.steps.map((s) => index.get(s.choiceId)).filter((h) => h && h.node.id !== def.consult!.node && h.choice.costSec > 0).map((h) => h!.choice.label),
+      rubric: def.consult.note.rubric,
+    });
+    const [mark, coachReply] = await Promise.all([
+      callLlmJson({ system: markSystem, user: noteText(SELFTEST_NOTE), maxOutputTokens: 8000, config: model }),
+      callLlmJson({
+        system: coachPrompt({
+          patient: p,
+          turns: turns.map((x) => ({ ...x, signals: null })),
+          missed: [],
+          heldBack: [],
+          explainMissed: def.consult.explain.items.filter((i) => !consult.explainCovered.includes(i.id)).map((i) => i.label),
+          jargon: consult.jargon,
+          rapportStart: def.consult.startRapport,
+          rapportEnd: consult.rapport,
+          walkedOut: false,
+        }),
+        user: "Write the coaching now.",
+        maxOutputTokens: 6000,
+        config: model,
+      }),
+    ]);
+    const noteVerdict = parseNoteVerdict(mark.text);
+    const note = noteVerdict ? scoreNote(def, state, noteVerdict) : null;
+    const coach = parseCoach(coachReply.text, turns.filter((x) => x.role === "physio"));
+    return { model, findings: state.findings, log, explainLog, explainCovered: consult.explainCovered, note, coach };
   },
 });
 

@@ -656,9 +656,8 @@
         {
           "id": "s-goal",
           "section": "S",
-          "label": "Goal: inter-varsity final in three weeks",
-          "points": 2,
-          "finding": "f-goals"
+          "label": "Goal: inter-varsity final in three weeks (he says so straight away)",
+          "points": 2
         },
         {
           "id": "s-screen",

@@ -717,6 +717,33 @@ export function moodOf(rapport: number): ConsultMood {
   return 'upset'
 }
 
+/**
+ * Clinical words a patient wouldn't know. Found in a learner's message, they count as jargon even if
+ * the AI misses them (the quick model sometimes does), unless the same message explains them.
+ * Everyday words people know (ligament, sprain, fracture, X-ray, swelling) aren't here.
+ */
+export const JARGON_TERMS = [
+  'ATFL', 'CFL', 'PTFL', 'ACL', 'PCL', 'MCL', 'LCL', 'inversion', 'eversion', 'paraesthesia', 'paresthesia', 'paraesthesiae',
+  'neurovascular', 'distal', 'distally', 'proximal', 'proximally', 'lateral', 'medial', 'malleolus', 'malleoli', 'malleolar',
+  'syndesmosis', 'syndesmotic', 'proprioception', 'proprioceptive', 'neuromuscular', 'effusion', 'oedema', 'edema', 'ecchymosis',
+  'dorsiflexion', 'plantarflexion', 'Ottawa', 'talar', 'talus', 'fibula', 'tibiofibular', 'anterior drawer', 'instability',
+  'recurrent', 'aetiology', 'etiology', 'radiculopathy', 'myotomes', 'dermatomes', 'sensorimotor', 'contralateral', 'ipsilateral',
+  'bilateral', 'unilateral', 'palpation', 'palpate', 'subluxation', 'cauda equina', 'saddle anaesthesia', 'DVT', 'PE', 'NSAIDs',
+]
+const EXPLAINING = /\b(which means|that means|meaning|in other words|basically|that's the|that is the|it's the part|it's a)\b/i
+
+/** Jargon words in a learner's message (none if they explain what they mean in the same message). */
+export function findJargon(text: string): string[] {
+  if (EXPLAINING.test(text)) return []
+  const found: string[] = []
+  for (const term of JARGON_TERMS) {
+    const acronym = term.length <= 5 && term === term.toUpperCase()
+    const re = new RegExp(`(^|[^A-Za-z])${term.replace(/ /g, '\\s+')}([^A-Za-z]|$)`, acronym ? '' : 'i')
+    if (re.test(text)) found.push(term)
+  }
+  return found
+}
+
 /** Trust change for one message. */
 export function rapportDelta(signals: Partial<ConsultSignals>): number {
   let d = 0
@@ -724,8 +751,11 @@ export function rapportDelta(signals: Partial<ConsultSignals>): number {
   return d
 }
 
-/** The facts the patient can talk about, with whether each is held back right now. */
-export type ConsultFact = { id: string; topic: string; answer: string; shared: boolean; locked: boolean; deflect: string | null }
+/**
+ * The facts the patient can talk about, with whether each is held back right now. `warmUnlocks`:
+ * held back, but a warm message (empathy) would earn enough trust to tell it in the same breath.
+ */
+export type ConsultFact = { id: string; topic: string; answer: string; shared: boolean; locked: boolean; warmUnlocks: boolean; deflect: string | null }
 export function consultFacts(def: SimCase, state: SimState, consult: ConsultState): ConsultFact[] {
   const spec = def.consult
   const node = spec ? def.nodes[spec.node] : undefined
@@ -735,12 +765,14 @@ export function consultFacts(def: SimCase, state: SimState, consult: ConsultStat
     .filter((c) => c.id !== spec.moveOn && c.reply)
     .map((c) => {
       const guard = spec.guarded.find((g) => g.choice === c.id)
+      const locked = Boolean(guard && consult.rapport < guard.minRapport && !taken.has(c.id))
       return {
         id: c.id,
         topic: c.label,
         answer: c.reply!.text,
         shared: taken.has(c.id),
-        locked: Boolean(guard && consult.rapport < guard.minRapport && !taken.has(c.id)),
+        locked,
+        warmUnlocks: Boolean(locked && guard && consult.rapport + RAPPORT_WEIGHTS.empathy >= guard.minRapport),
         deflect: guard?.deflect ?? null,
       }
     })
@@ -781,7 +813,8 @@ function countSignals(c: ConsultState, input: ConsultTurnInput) {
 /**
  * One learner message during the history. The AI's verdict is only advice: facts outside the
  * history node are dropped, at most MAX_FACTS_PER_TURN count, and guarded facts stay held back
- * unless trust (before this message, as the patient answered) was high enough.
+ * unless trust after this message is high enough (a warm "it sounds like a lot is riding on this:
+ * is anything worrying you?" can open the patient up in one go, as it would in real life).
  */
 export function applyConsultTurn(def: SimCase, state: SimState, consult: ConsultState, input: ConsultTurnInput, now: number): ConsultTurnResult {
   const spec = def.consult
@@ -790,7 +823,9 @@ export function applyConsultTurn(def: SimCase, state: SimState, consult: Consult
     throw new SimError('unavailable', 'The conversation has moved on.')
   }
   if (consult.turns >= spec.maxTurns) throw new SimError('unavailable', 'Time to examine the patient.')
-  const facts = consultFacts(def, state, consult)
+  // Held back judged on trust after this message
+  const after = clamp(consult.rapport + rapportDelta(input.signals), 0, 100)
+  const facts = consultFacts(def, state, { ...consult, rapport: after })
   const byId = new Map(facts.map((f) => [f.id, f]))
   const asked = unique(input.facts.filter((id) => byId.has(id))).slice(0, MAX_FACTS_PER_TURN)
   const locked = asked.filter((id) => byId.get(id)!.locked)
