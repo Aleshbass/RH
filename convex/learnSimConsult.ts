@@ -665,27 +665,46 @@ export const transcribe = action({
 export const speak = action({
   args: { attemptId: v.id("learnSimAttempts"), index: v.number() },
   handler: async (ctx, args): Promise<ArrayBuffer> => {
-    const key = process.env.ELEVENLABS_API_KEY?.trim();
-    if (!key) throw new ConvexError("Voice replies aren’t set up.");
+    if (!process.env.ELEVENLABS_API_KEY?.trim()) throw new ConvexError("Voice replies aren’t set up.");
     const line = await ctx.runMutation(beginAudioRef, { attemptId: args.attemptId, purpose: "speak", index: args.index });
     if (!line.voiceId) throw new ConvexError("This patient has no voice yet.");
-    const model = process.env.ELEVENLABS_SIM_MODEL?.trim() || "eleven_multilingual_v2";
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
-    try {
-      const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(line.voiceId)}?output_format=mp3_44100_64`, {
-        method: "POST",
-        headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/mpeg" },
-        body: JSON.stringify({ text: line.text, model_id: model, voice_settings: { stability: 0.5, similarity_boost: 0.8 } }),
-        signal: controller.signal,
-      });
-      if (!res.ok) throw new ConvexError(res.status === 401 ? "Voice replies aren’t set up." : "The voice didn’t come through.");
-      return await res.arrayBuffer();
-    } catch (err) {
-      if (err instanceof ConvexError) throw err;
-      throw new ConvexError("The voice didn’t come through.");
-    } finally {
-      clearTimeout(timer);
-    }
+    return await elevenTts(line.text, line.voiceId);
+  },
+});
+
+/** One line in a case voice (ElevenLabs, MP3). ELEVENLABS_SIM_MODEL picks the model. */
+async function elevenTts(text: string, voiceId: string, modelOverride?: string): Promise<ArrayBuffer> {
+  const key = process.env.ELEVENLABS_API_KEY?.trim();
+  if (!key) throw new ConvexError("Voice replies aren’t set up.");
+  const model = modelOverride || process.env.ELEVENLABS_SIM_MODEL?.trim() || "eleven_multilingual_v2";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_64`, {
+      method: "POST",
+      headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/mpeg" },
+      body: JSON.stringify({ text, model_id: model, voice_settings: { stability: 0.5, similarity_boost: 0.8 } }),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new ConvexError(res.status === 401 ? "Voice replies aren’t set up." : `The voice didn’t come through (HTTP ${res.status}).`);
+    return await res.arrayBuffer();
+  } catch (err) {
+    if (err instanceof ConvexError) throw err;
+    throw new ConvexError("The voice didn’t come through.");
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Voice check: one patient line through the same call students use. Bytes and time only. */
+export const voiceTest = internalAction({
+  args: { text: v.optional(v.string()), model: v.optional(v.string()) },
+  handler: async (_ctx, args) => {
+    const def = SIM_CASES.find((c) => c.slug === "ankle-sprain-after-football");
+    const voiceId = def?.speakers.patient?.voice;
+    if (!voiceId) throw new ConvexError("No patient voice in the case.");
+    const started = Date.now();
+    const audio = await elevenTts(args.text ?? "Yes, sir. I'm on a sports scholarship, and if I miss the final, coach might drop me.", voiceId, args.model);
+    return { bytes: audio.byteLength, ms: Date.now() - started, model: args.model || process.env.ELEVENLABS_SIM_MODEL?.trim() || "eleven_multilingual_v2" };
   },
 });
