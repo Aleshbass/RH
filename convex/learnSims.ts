@@ -191,6 +191,9 @@ function attemptView(def: SimCase, attempt: Doc<"learnSimAttempts">) {
             patientFirstName: def.speakers.patient?.name ?? def.patient.name.split(" ")[0],
             // The opening line was recorded with the case's voices (history node, line 0)
             openingAudio: def.audio ? `${def.consult.node}-0` : null,
+            // A home programme comes after explaining the plan
+            programme: Boolean(def.consult.programme),
+            programmeMax: def.consult.programme?.maxItems ?? null,
             // The patient's replies can be spoken live (ElevenLabs, in the case's own voice)
             voice: Boolean(def.speakers.patient?.voice && process.env.ELEVENLABS_API_KEY?.trim()),
           }

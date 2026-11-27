@@ -14,6 +14,7 @@ import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { addTurn, finalizeConsult, ownAttempt } from "./learnSims";
 import { SIM_CASES } from "../content/sim-cases";
+import { LIBRARY } from "./exerciseLibraryContent";
 import { callLlmJson, simLlmConfig, transcribeAudioChunk, type LlmProvider } from "./helpers/llm";
 import {
   coachPrompt,
@@ -44,6 +45,8 @@ import {
   moodOf,
   NOTE_SECTIONS,
   scoreNote,
+  scoreProgramme,
+  stageAfterExplain,
   SimError,
   SIGNAL_KEYS as SIGNAL_NAMES,
   startState,
@@ -377,8 +380,58 @@ export const finishExplaining = mutation({
     const { attempt, def, consult } = await openConsult(ctx, args.attemptId);
     if (isPending(attempt)) throw new ConvexError(`${profileOf(def).firstName} is still answering.`);
     if (consult.stage !== "explain") return null;
-    await ctx.db.patch(attempt._id, { consult: { ...consult, stage: "note" } });
+    await ctx.db.patch(attempt._id, { consult: { ...consult, stage: stageAfterExplain(def) } });
     return null;
+  },
+});
+
+// ── The home programme: picked from the exercise library, marked by the case's rules (no AI) ──
+
+const LIBRARY_BY_SLUG = new Map(LIBRARY.map((e) => [e.slug, e]));
+const FREQUENCIES = ["Once a day", "Twice a day", "3 times a day", "3 times a week", "Every other day"];
+const whole = (n: number | undefined, lo: number, hi: number) => (typeof n === "number" && Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : undefined);
+
+export const submitProgramme = mutation({
+  args: {
+    attemptId: v.id("learnSimAttempts"),
+    items: v.array(
+      v.object({
+        exerciseId: v.string(),
+        side: v.optional(v.union(v.literal("L"), v.literal("R"), v.null())),
+        sets: v.optional(v.number()),
+        reps: v.optional(v.number()),
+        holdSeconds: v.optional(v.union(v.number(), v.null())),
+        frequency: v.optional(v.string()),
+      })
+    ),
+    skip: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { attempt, def, consult } = await openConsult(ctx, args.attemptId);
+    if (consult.stage !== "programme" || !def.consult?.programme) throw new ConvexError("It isn’t time for the programme.");
+    if (args.items.length > 30) throw new ConvexError("That’s too many exercises for one programme.");
+    // Same limits as a real programme (convex/exercisePrograms.ts cleanItems); unknown exercises are dropped
+    const seen = new Set<string>();
+    const items = (args.skip ? [] : args.items).flatMap((i) => {
+      const entry = LIBRARY_BY_SLUG.get(i.exerciseId);
+      const key = `${i.exerciseId}:${i.side ?? ""}`;
+      if (!entry || seen.has(key)) return [];
+      seen.add(key);
+      return [
+        {
+          exerciseId: entry.slug,
+          side: entry.sided ? (i.side === "R" ? ("R" as const) : ("L" as const)) : null,
+          sets: whole(i.sets, 1, 10) ?? entry.defaults.sets,
+          reps: whole(i.reps, 1, 50) ?? entry.defaults.reps,
+          holdSeconds: i.holdSeconds === null ? null : (whole(i.holdSeconds ?? undefined, 1, 120) ?? entry.defaults.holdSeconds ?? null),
+          frequency: FREQUENCIES.includes(i.frequency ?? "") ? i.frequency! : entry.defaults.frequency,
+        },
+      ];
+    });
+    const skipped = Boolean(args.skip) || items.length === 0;
+    const programmeResult = scoreProgramme(def, items);
+    await ctx.db.patch(attempt._id, { consult: { ...consult, programme: { items, skipped }, programmeResult, stage: "note" } });
+    return { pct: programmeResult.pct };
   },
 });
 
@@ -421,6 +474,8 @@ export const beginNote = internalMutation({
       missed: debrief.missedQuestions.map((q) => q.label),
       heldBack: debrief.heldBack.map((h) => ({ label: h.label, askedTooEarly: h.askedTooEarly })),
       explainMissed: debrief.explain.filter((i) => !i.covered).map((i) => i.label),
+      programmeMissed: debrief.programme ? debrief.programme.include.filter((r) => !r.met).map((r) => r.label) : [],
+      programmeAvoid: debrief.programme?.result?.avoided.map((a) => a.label) ?? [],
       jargon: consult.jargon,
       rapportStart: spec.startRapport,
       rapportEnd: consult.rapport,

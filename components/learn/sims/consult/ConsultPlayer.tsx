@@ -11,6 +11,7 @@ import type { SimAttempt } from '../simApi'
 import { ScoredPlayer } from '../v2/ScoredPlayer'
 import { ConsultChat } from './ConsultChat'
 import { ConsultNote } from './ConsultNote'
+import { ConsultProgramme } from './ConsultProgramme'
 
 const noop = () => undefined
 
@@ -27,6 +28,7 @@ export function ConsultPlayer({ attempt, onDone }: { attempt: SimAttempt; onDone
   if (!info) return null
   if (finished) return walkedOut ? <ConsultChat attempt={attempt} info={info} onDone={onDone} /> : null
   if (info.stage === 'case') return <ScoredPlayer attempt={attempt} onDone={noop} />
+  if (info.stage === 'programme') return <ConsultProgramme attempt={attempt} />
   if (info.stage === 'note') return <ConsultNote attempt={attempt} />
   return <ConsultChat key={info.stage} attempt={attempt} info={info} onDone={onDone} />
 }

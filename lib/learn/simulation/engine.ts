@@ -639,9 +639,41 @@ export type ConsultSpec = {
   expert: { label: string; transcript: { speaker: 'physio' | 'patient'; text: string; note?: string }[] }
   maxTurns: number
   explainTurns: number
+  /**
+   * The home exercise programme (owner 2026-11-27: "build an exercise programme"), picked from the
+   * exercise library and marked here, without AI. `include`: what a good programme covers, each met
+   * by any one of `anyOf` (library exercise ids); `avoid`: wrong at this stage; `maxItems`: more
+   * than this and patients don't do them.
+   */
+  programme?: ProgrammeSpec
 }
 
-export type ConsultStage = 'history' | 'case' | 'explain' | 'note' | 'done'
+export type ProgrammeSpec = {
+  include: { id: string; label: string; points: number; anyOf: string[]; why: string }[]
+  avoid: { id: string; label: string; penalty: number; anyOf: string[]; why: string }[]
+  maxItems: number
+  model: { exerciseId: string; dose: string; note?: string }[]
+}
+
+/**
+ * One exercise in a learner's programme, dosed as on the platform (exercisePrograms items):
+ * `exerciseId` is the library slug (convex/exerciseLibraryContent.ts).
+ */
+export type ProgrammeItem = { exerciseId: string; side?: 'L' | 'R' | null; sets?: number; reps?: number; holdSeconds?: number | null; frequency?: string }
+
+export type ProgrammeResult = {
+  met: string[]
+  avoided: { id: string; label: string; why: string; exerciseIds: string[] }[]
+  tooMany: boolean
+  points: number
+  max: number
+  pct: number
+}
+
+/** Points off when a programme has more exercises than the case allows. */
+export const TOO_MANY_PENALTY = 3
+
+export type ConsultStage = 'history' | 'case' | 'explain' | 'programme' | 'note' | 'done'
 
 export type NoteResult = {
   met: string[]
@@ -675,6 +707,9 @@ export type ConsultState = {
   note: null | { sections: Record<NoteSection, string>; skipped: boolean }
   noteResult: null | NoteResult
   coach: null | ConsultCoach
+  /** Older attempts (before the programme step) don't have these */
+  programme?: null | { items: ProgrammeItem[]; skipped: boolean }
+  programmeResult?: null | ProgrammeResult
 }
 
 const emptySignals = (): Record<keyof ConsultSignals, number> => ({
@@ -705,7 +740,29 @@ export function consultStart(def: SimCase): ConsultState {
     note: null,
     noteResult: null,
     coach: null,
+    programme: null,
+    programmeResult: null,
   }
+}
+
+/** After explaining the plan: the programme if the case has one, else the note. */
+export const stageAfterExplain = (def: SimCase): ConsultStage => (def.consult?.programme ? 'programme' : 'note')
+
+/** Marks a home programme against the case: what it covers, what's unsafe now, and its length. */
+export function scoreProgramme(def: SimCase, items: ProgrammeItem[]): ProgrammeResult {
+  const spec = def.consult?.programme
+  if (!spec) return { met: [], avoided: [], tooMany: false, points: 0, max: 0, pct: 0 }
+  const picked = new Set(items.map((i) => i.exerciseId))
+  const met = spec.include.filter((r) => r.anyOf.some((id) => picked.has(id))).map((r) => r.id)
+  const avoided = spec.avoid
+    .map((r) => ({ id: r.id, label: r.label, why: r.why, exerciseIds: r.anyOf.filter((id) => picked.has(id)) }))
+    .filter((r) => r.exerciseIds.length > 0)
+  const tooMany = picked.size > spec.maxItems
+  const max = spec.include.reduce((s, r) => s + Math.max(0, r.points), 0)
+  const earned = spec.include.filter((r) => met.includes(r.id)).reduce((s, r) => s + r.points, 0)
+  const penalty = avoided.reduce((s, a) => s + (spec.avoid.find((r) => r.id === a.id)?.penalty ?? 0), 0) + (tooMany ? TOO_MANY_PENALTY : 0)
+  const points = Math.max(0, earned - penalty)
+  return { met, avoided, tooMany, points, max, pct: max > 0 ? clamp(Math.round((points / max) * 100), 0, 100) : 0 }
 }
 
 /** How the patient feels at a trust level (the player shows this, never the number). */
@@ -894,7 +951,8 @@ export function scoreNote(
   return { met, quotes, fabricated, feedback, points, max, pct: max > 0 ? clamp(Math.round((points / max) * 100), 0, 100) : 0 }
 }
 
-export type ConsultScores = { case: number; communication: number; explain: number; note: number; overall: number; passed: boolean }
+/** `programme` is null for cases without a programme step. */
+export type ConsultScores = { case: number; communication: number; explain: number; note: number; programme: number | null; overall: number; passed: boolean }
 
 /** History time doesn't count against a consult: talking well takes longer than tapping. */
 const consultScore = (def: SimCase, state: SimState) => scoreState(def, state, { skipBudget: [def.nodes[def.consult?.node ?? '']?.phase ?? 'subjective'] })
@@ -907,13 +965,25 @@ export function consultScores(def: SimCase, state: SimState, consult: ConsultSta
   const explain = explainMax > 0 ? Math.round((explainGot / explainMax) * 100) : 0
   const communication = consult.walkedOut ? Math.min(consult.rapport, 20) : Math.round(0.4 * consult.rapport + 0.6 * explain)
   const note = consult.noteResult?.pct ?? 0
-  const overall = Math.round(0.5 * score.pct + 0.2 * communication + 0.3 * note)
-  // A safe case alone isn't a pass: the patient must have understood you, and the note must stand up
-  const passed = !consult.walkedOut && score.passed && overall >= def.passMark && communication >= PASS_PART && note >= PASS_PART
-  return { case: score.pct, communication, explain, note, overall, passed }
+  const programme = spec?.programme ? (consult.programmeResult?.pct ?? 0) : null
+  const overall =
+    programme === null
+      ? Math.round(0.5 * score.pct + 0.2 * communication + 0.3 * note)
+      : Math.round(0.45 * score.pct + 0.2 * communication + 0.2 * note + 0.15 * programme)
+  // A safe case alone isn't a pass: the patient must have understood you, and the note (and the
+  // programme, when there is one) must stand up
+  const passed =
+    !consult.walkedOut &&
+    score.passed &&
+    overall >= def.passMark &&
+    communication >= PASS_PART &&
+    note >= PASS_PART &&
+    (programme === null || programme >= PASS_PART)
+  return { case: score.pct, communication, explain, note, programme, overall, passed }
 }
 
-export type ConsultSkills = { history: number; safety: number; reasoning: number; communication: number; documentation: number }
+/** `exercise`: the programme, for cases that have one. */
+export type ConsultSkills = { history: number; safety: number; reasoning: number; communication: number; documentation: number; exercise?: number }
 
 /** The skills radar for one consult (0–100 each). */
 export function consultSkills(def: SimCase, state: SimState, consult: ConsultState): ConsultSkills {
@@ -948,6 +1018,7 @@ export function consultSkills(def: SimCase, state: SimState, consult: ConsultSta
     reasoning: pct(rGot, rMax),
     communication: scores.communication,
     documentation: scores.note,
+    ...(scores.programme === null ? {} : { exercise: scores.programme }),
   }
 }
 
@@ -980,6 +1051,14 @@ export type ConsultDebrief = {
   }
   expert: ConsultSpec['expert'] | null
   coach: ConsultCoach | null
+  programme: null | {
+    skipped: boolean
+    items: ProgrammeItem[]
+    result: ProgrammeResult | null
+    include: { id: string; label: string; points: number; why: string; met: boolean }[]
+    maxItems: number
+    model: ProgrammeSpec['model']
+  }
 }
 
 export function buildConsultDebrief(def: SimCase, state: SimState, consult: ConsultState): ConsultDebrief {
@@ -1028,6 +1107,23 @@ export function buildConsultDebrief(def: SimCase, state: SimState, consult: Cons
       : null,
     expert: spec.expert ?? null,
     coach: consult.coach,
+    programme:
+      spec.programme && consult.programme
+        ? {
+            skipped: consult.programme.skipped,
+            items: consult.programme.items,
+            result: consult.programmeResult ?? null,
+            include: spec.programme.include.map((r) => ({
+              id: r.id,
+              label: r.label,
+              points: r.points,
+              why: r.why,
+              met: Boolean(consult.programmeResult?.met.includes(r.id)),
+            })),
+            maxItems: spec.programme.maxItems,
+            model: spec.programme.model,
+          }
+        : null,
   }
 }
 
@@ -1070,5 +1166,22 @@ function validateConsult(def: SimCase): string[] {
   }
   for (const k of NOTE_SECTIONS) if (!spec.note.model?.[k]) say(`model note needs section ${k}`)
   if (!spec.expert?.transcript?.length) say('add the expert consultation')
+  if (spec.programme) {
+    const p = spec.programme
+    const ids = new Set<string>()
+    for (const r of [...p.include, ...p.avoid]) {
+      if (ids.has(r.id)) say(`programme rule "${r.id}" is used twice`)
+      ids.add(r.id)
+      if (!r.anyOf?.length) say(`programme rule "${r.id}" needs exercises in anyOf`)
+      if (!r.why) say(`programme rule "${r.id}" needs a why`)
+    }
+    for (const r of p.include) if (!(r.points > 0)) say(`programme rule "${r.id}" needs points`)
+    for (const r of p.avoid) if (!(r.penalty > 0)) say(`programme rule "${r.id}" needs a penalty`)
+    if (!(p.maxItems > 0)) say('programme needs maxItems')
+    if (!p.model?.length) say('programme needs a model programme')
+    // The model programme must itself score full marks and avoid everything on the avoid list
+    const result = scoreProgramme(def, p.model.map((m) => ({ exerciseId: m.exerciseId })))
+    if (result.pct !== 100) say('the model programme must meet every include rule (and nothing on the avoid list)')
+  }
   return problems
 }

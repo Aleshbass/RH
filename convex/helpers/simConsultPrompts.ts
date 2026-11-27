@@ -375,6 +375,8 @@ export function coachPrompt(input: {
   missed: string[];
   heldBack: { label: string; askedTooEarly: boolean }[];
   explainMissed: string[];
+  programmeMissed?: string[];
+  programmeAvoid?: string[];
   jargon: string[];
   rapportStart: number;
   rapportEnd: number;
@@ -399,6 +401,8 @@ export function coachPrompt(input: {
       ? `What the patient held back: ${input.heldBack.map((h) => `${h.label}${h.askedTooEarly ? " (asked, but before the patient trusted them)" : " (never asked)"}`).join("; ")}.`
       : "",
     input.explainMissed.length ? `Missing from the explanation of the plan: ${input.explainMissed.join("; ")}.` : "",
+    input.programmeMissed?.length ? `Missing from the home exercise programme: ${input.programmeMissed.join("; ")}.` : "",
+    input.programmeAvoid?.length ? `Wrong for this stage in the programme: ${input.programmeAvoid.join("; ")}.` : "",
     input.jargon.length ? `Unexplained medical words used: ${input.jargon.join(", ")}.` : "",
     "",
     "TRANSCRIPT (#n = the student's message number; [ ] = what that message did):",

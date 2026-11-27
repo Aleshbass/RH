@@ -8,7 +8,9 @@
  */
 
 import { useState, type ReactNode } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
+import { entryPoster } from '@/components/exercise-programs/LibraryPicker'
 import { useRouter } from 'next/navigation'
 import { useMutation } from 'convex/react'
 import { toast } from 'sonner'
@@ -32,6 +34,7 @@ import { displayFont, pillInk, pillLime, pillOutline } from '../../shared'
 import { attemptPath, DISCLAIMER, errorText, noteServerTime, simApi, SIMULATIONS_PATH, type ConsultDebriefView, type SimDebriefView } from '../simApi'
 import { unlockSimAudio } from '../simAudio'
 import { OUTCOME_TONE, PlayerFrame } from '../v2/parts'
+import { doseText, simExercise } from './simLibrary'
 
 const SIGNAL_CHIPS: Record<string, { label: string; good: boolean }> = {
   open: { label: 'Open question', good: true },
@@ -112,9 +115,11 @@ function SkillsRadar({ skills }: { skills: ConsultDebriefView['skills'] }) {
     { key: 'history', label: 'History' },
     { key: 'safety', label: 'Safety' },
     { key: 'reasoning', label: 'Reasoning' },
+    ...(skills.exercise !== undefined ? [{ key: 'exercise' as const, label: 'Exercise' }] : []),
     { key: 'documentation', label: 'Notes' },
     { key: 'communication', label: 'Talking' },
   ]
+  const value = (key: keyof ConsultDebriefView['skills']) => skills[key] ?? 0
   const cx = 120
   const cy = 112
   const R = 78
@@ -123,9 +128,9 @@ function SkillsRadar({ skills }: { skills: ConsultDebriefView['skills'] }) {
     return [cx + Math.cos(a) * R * (v / 100), cy + Math.sin(a) * R * (v / 100)] as const
   }
   const ring = (v: number) => axes.map((_, i) => at(i, v).join(',')).join(' ')
-  const shape = axes.map((a, i) => at(i, Math.max(4, skills[a.key])).join(',')).join(' ')
+  const shape = axes.map((a, i) => at(i, Math.max(4, value(a.key))).join(',')).join(' ')
   return (
-    <svg viewBox="0 0 240 205" className="mx-auto w-full max-w-[320px]" role="img" aria-label={axes.map((a) => `${a.label} ${skills[a.key]}%`).join(', ')}>
+    <svg viewBox="0 0 240 205" className="mx-auto w-full max-w-[320px]" role="img" aria-label={axes.map((a) => `${a.label} ${value(a.key)}%`).join(', ')}>
       {[25, 50, 75, 100].map((v) => (
         <polygon key={v} points={ring(v)} fill="none" stroke="rgb(11 19 18 / 0.08)" strokeWidth="1" />
       ))}
@@ -138,7 +143,7 @@ function SkillsRadar({ skills }: { skills: ConsultDebriefView['skills'] }) {
         const [x, y] = at(i, 128)
         return (
           <text key={a.key} x={x} y={y} textAnchor="middle" dominantBaseline="central" fontSize="11" fontWeight="700" fill="#0b1312">
-            {a.label} <tspan fontWeight="500" fill="rgb(11 19 18 / 0.55)">{skills[a.key]}</tspan>
+            {a.label} <tspan fontWeight="500" fill="rgb(11 19 18 / 0.55)">{value(a.key)}</tspan>
           </text>
         )
       })}
@@ -293,6 +298,7 @@ export function ConsultDebrief({ data }: { data: SimDebriefView }) {
               <Bar label="Decisions" value={scores.case} hint="History, examination and plan: what you asked, tested and chose." />
               <Bar label="Communication" value={scores.communication} hint={`How ${first} felt, and how well you explained the plan.`} />
               <Bar label="Note" value={scores.note} hint="Your SOAP note against the case’s marking guide." />
+              {scores.programme !== null && <Bar label="Programme" value={scores.programme} hint="Your home exercises: what they cover, and whether they suit this stage." />}
             </div>
           </Section>
 
@@ -366,6 +372,63 @@ export function ConsultDebrief({ data }: { data: SimDebriefView }) {
               ))}
             </ul>
           </Section>
+
+          {d.programme && (
+            <Section kicker="Home exercise programme" title={d.programme.skipped ? 'You skipped the programme' : 'Your programme'}>
+              {!d.programme.skipped && (
+                <ul className="mb-3 space-y-2">
+                  {d.programme.items.map((item, i) => {
+                    const entry = simExercise(item.exerciseId)
+                    const poster = entry ? entryPoster(entry) : null
+                    return (
+                      <li key={i} className="flex items-center gap-3 rounded-2xl border border-rh-ink/[0.08] p-2.5">
+                        <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-pt-sunken">
+                          {poster && <Image src={poster} alt="" fill sizes="44px" unoptimized className="object-contain p-0.5" />}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-[13.5px] font-semibold leading-tight text-rh-ink">{entry?.name ?? item.exerciseId}</span>
+                          <span className="block text-xs text-rh-ink/55">{doseText(item)}</span>
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+              <ul className="space-y-2">
+                {d.programme.include.map((r) => (
+                  <li key={r.id} className="flex gap-2.5 text-[13.5px] leading-5">
+                    {r.met ? <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /> : <X className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />}
+                    <span>
+                      <span className={r.met ? 'text-rh-ink' : 'text-rh-ink/60'}>{r.label}</span>
+                      {!r.met && <span className="block text-xs text-rh-ink/50">{r.why}</span>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {d.programme.result && (d.programme.result.avoided.length > 0 || d.programme.result.tooMany) && (
+                <div className="mt-3 rounded-2xl bg-rose-50 p-3 text-[13px] leading-5 text-rose-900">
+                  {d.programme.result.avoided.map((a) => (
+                    <p key={a.id} className="mb-1">
+                      <span className="font-bold">{a.label}: </span>
+                      {a.why}
+                    </p>
+                  ))}
+                  {d.programme.result.tooMany && <p>More than {d.programme.maxItems} exercises: people rarely do long programmes. Pick the ones that matter most.</p>}
+                </div>
+              )}
+              <details className="mt-3 text-[13px] leading-5">
+                <summary className="cursor-pointer font-semibold text-rh-ink/60">Model programme</summary>
+                <ul className="mt-2 space-y-1.5">
+                  {d.programme.model.map((m) => (
+                    <li key={m.exerciseId} className="text-rh-ink/80">
+                      <span className="font-semibold text-rh-ink">{simExercise(m.exerciseId)?.name ?? m.exerciseId}</span>: {m.dose}
+                      {m.note ? <span className="block text-xs text-rh-ink/55">{m.note}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </Section>
+          )}
 
           {d.note && (
             <Section kicker="Documentation" title={d.note.skipped ? 'You skipped the note' : 'Your note, marked'}>

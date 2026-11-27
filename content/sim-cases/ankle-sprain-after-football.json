@@ -853,6 +853,110 @@
       ]
     },
     "maxTurns": 24,
-    "explainTurns": 8
+    "explainTurns": 8,
+    "programme": {
+      "include": [
+        {
+          "id": "g-mobility",
+          "label": "Gentle early movement of the ankle",
+          "points": 4,
+          "anyOf": [
+            "ankle-circles"
+          ],
+          "why": "Moving the ankle early, within comfort, limits stiffness and helps the swelling settle."
+        },
+        {
+          "id": "g-isometric",
+          "label": "Pain-free strengthening the sprained ankle can take now (holds, no movement)",
+          "points": 3,
+          "anyOf": [
+            "static-push-down"
+          ],
+          "why": "Static holds load the muscles around the ankle without stressing the healing ligament."
+        },
+        {
+          "id": "g-calf",
+          "label": "Calf strength, started gently",
+          "points": 4,
+          "anyOf": [
+            "seated-calf-hold",
+            "calf-raise"
+          ],
+          "why": "The calf weakens quickly after a sprain, and he needs it to run and jump again."
+        },
+        {
+          "id": "g-balance",
+          "label": "Balance training",
+          "points": 5,
+          "anyOf": [
+            "single-leg-balance",
+            "heel-to-toe-walking"
+          ],
+          "why": "This is his third sprain. Balance training is the strongest protection against a fourth."
+        },
+        {
+          "id": "g-range",
+          "label": "Getting back the bend at the ankle (calf stretch)",
+          "points": 2,
+          "anyOf": [
+            "calf-towel-stretch",
+            "calf-stretch"
+          ],
+          "why": "Swelling and guarding stiffen the ankle; a gentle calf stretch brings back the range he needs to run."
+        }
+      ],
+      "avoid": [
+        {
+          "id": "x-heavy",
+          "label": "Heavy eccentric loading on a day-old sprain",
+          "penalty": 3,
+          "anyOf": [
+            "eccentric-heel-drop"
+          ],
+          "why": "Too much load too soon: eccentric heel drops are for Achilles problems, not an acute ligament sprain."
+        },
+        {
+          "id": "x-offtarget",
+          "label": "Exercises for a different problem",
+          "penalty": 2,
+          "anyOf": [
+            "plantar-fascia-wall-stretch",
+            "plantar-fascia-towel-stretch",
+            "plantar-fascia-loading",
+            "sciatic-nerve-glide",
+            "femoral-nerve-glide"
+          ],
+          "why": "These are for heel or nerve pain. A focused programme is one he will actually do."
+        }
+      ],
+      "maxItems": 5,
+      "model": [
+        {
+          "exerciseId": "ankle-circles",
+          "dose": "2 × 10, 3 times a day",
+          "note": "Within comfort; more as the swelling goes down."
+        },
+        {
+          "exerciseId": "static-push-down",
+          "dose": "10 × 10-second holds, twice a day",
+          "note": "Push into a towel or wall without moving the ankle."
+        },
+        {
+          "exerciseId": "seated-calf-hold",
+          "dose": "5 × 45-second holds, once a day",
+          "note": "Progress to calf raises when he can stand on it without a limp."
+        },
+        {
+          "exerciseId": "single-leg-balance",
+          "dose": "3 × 30 seconds on the left, twice a day",
+          "note": "Near a wall; harder (eyes closed, soft surface) as he improves."
+        },
+        {
+          "exerciseId": "calf-towel-stretch",
+          "dose": "3 × 30-second holds, twice a day",
+          "note": "Gentle stretch, never sharp pain."
+        }
+      ]
+    }
   }
 }

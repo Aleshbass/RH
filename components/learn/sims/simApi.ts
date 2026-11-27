@@ -68,6 +68,15 @@ export const consultApi = {
   moveOn: makeFunctionReference<'mutation', { attemptId: AttemptId }, null>('learnSimConsult:moveOn'),
   finishExplaining: makeFunctionReference<'mutation', { attemptId: AttemptId }, null>('learnSimConsult:finishExplaining'),
   submitNote: makeFunctionReference<'action', { attemptId: AttemptId; sections: NoteSections; skip?: boolean }, null>('learnSimConsult:submitNote'),
+  submitProgramme: makeFunctionReference<
+    'mutation',
+    {
+      attemptId: AttemptId
+      items: { exerciseId: string; side?: 'L' | 'R' | null; sets?: number; reps?: number; holdSeconds?: number | null; frequency?: string }[]
+      skip?: boolean
+    },
+    { pct: number }
+  >('learnSimConsult:submitProgramme'),
   transcribe: makeFunctionReference<'action', { attemptId: AttemptId; audio: ArrayBuffer }, { text: string }>('learnSimConsult:transcribe'),
   speak: makeFunctionReference<'action', { attemptId: AttemptId; index: number }, ArrayBuffer>('learnSimConsult:speak'),
 }

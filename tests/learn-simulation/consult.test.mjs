@@ -19,6 +19,8 @@ import {
   MAX_FACTS_PER_TURN,
   moodOf,
   scoreNote,
+  scoreProgramme,
+  stageAfterExplain,
   startState,
   WALKOUT_RAPPORT,
 } from '../../lib/learn/simulation/engine.ts'
@@ -117,7 +119,7 @@ test('the conversation has a turn limit', () => {
 })
 
 /** A strong learner: every history fact with good communication, the expert's examination and plan. */
-function strongRun({ note = 'full', extra = [] } = {}) {
+function strongRun({ note = 'full', extra = [], programme = 'model' } = {}) {
   let { state, consult } = begin()
   const history = [...ankle.expertPath.filter((id) => ankle.nodes.history.choices.some((c) => c.id === id) && id !== 'to-exam'), ...extra]
   ;({ state, consult } = applyConsultTurn(ankle, state, consult, turn([], { open: true, empathy: true }), 0))
@@ -133,7 +135,16 @@ function strongRun({ note = 'full', extra = [] } = {}) {
   ;({ consult } = applyExplainTurn(ankle, consult, { ...turn([], { checks: true }), covered: ['e-final', 'e-home', 'e-safety', 'e-check'] }))
   const allMet = ankle.consult.note.rubric.map((r) => r.id)
   const noteResult = note === 'full' ? scoreNote(ankle, state, { met: allMet }) : scoreNote(ankle, state, { met: [] })
-  consult = { ...consult, stage: 'done', note: { sections: { S: 's', O: 'o', A: 'a', P: 'p' }, skipped: note !== 'full' }, noteResult }
+  const model = ankle.consult.programme.model.map((m) => ({ exerciseId: m.exerciseId }))
+  const programmeItems = programme === 'model' ? model : []
+  consult = {
+    ...consult,
+    stage: 'done',
+    note: { sections: { S: 's', O: 'o', A: 'a', P: 'p' }, skipped: note !== 'full' },
+    noteResult,
+    programme: { items: programmeItems, skipped: programmeItems.length === 0 },
+    programmeResult: scoreProgramme(ankle, programmeItems),
+  }
   return { state, consult }
 }
 
@@ -192,4 +203,35 @@ test('the debrief lists the expert’s questions you skipped and what he kept to
   assert.ok(!missed.includes('a-mech'))
   assert.deepEqual(debrief.heldBack.map((h) => [h.id, h.askedTooEarly]), [['a-worry', true]])
   assert.ok(debrief.heldBack[0].answer.includes('scholarship'))
+})
+
+test('the programme: the model scores full marks, nothing scores nothing', () => {
+  assert.equal(stageAfterExplain(ankle), 'programme')
+  const model = ankle.consult.programme.model.map((m) => ({ exerciseId: m.exerciseId }))
+  assert.equal(scoreProgramme(ankle, model).pct, 100)
+  const none = scoreProgramme(ankle, [])
+  assert.equal(none.pct, 0)
+  assert.deepEqual(none.met, [])
+})
+
+test('the programme: what it covers counts, wrong-for-now exercises and too many cost points', () => {
+  const balanceOnly = scoreProgramme(ankle, [{ exerciseId: 'single-leg-balance' }])
+  assert.deepEqual(balanceOnly.met, ['g-balance'])
+  const heavy = scoreProgramme(ankle, [{ exerciseId: 'single-leg-balance' }, { exerciseId: 'eccentric-heel-drop' }])
+  assert.deepEqual(heavy.avoided.map((a) => a.id), ['x-heavy'])
+  assert.ok(heavy.points < balanceOnly.points)
+  const lots = ['ankle-circles', 'static-push-down', 'calf-raise', 'single-leg-balance', 'calf-stretch', 'heel-to-toe-walking', 'mini-squat'].map((exerciseId) => ({ exerciseId }))
+  const crowded = scoreProgramme(ankle, lots)
+  assert.equal(crowded.tooMany, true)
+  assert.ok(crowded.pct < 100, 'everything covered, but seven exercises is too many to do')
+})
+
+test('a consult with no programme can’t pass, and the programme shows on the radar', () => {
+  const { state, consult } = strongRun({ programme: 'none' })
+  const scores = consultScores(ankle, state, consult)
+  assert.equal(scores.programme, 0)
+  assert.equal(scores.passed, false)
+  const good = strongRun()
+  assert.equal(consultScores(ankle, good.state, good.consult).programme, 100)
+  assert.equal(consultSkills(ankle, good.state, good.consult).exercise, 100)
 })
