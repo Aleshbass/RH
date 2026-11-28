@@ -150,7 +150,14 @@ async function openConsult(ctx: MutationCtx, attemptId: string) {
 }
 
 const isPending = (attempt: Doc<"learnSimAttempts">) => Boolean(attempt.pendingAt && Date.now() - attempt.pendingAt < PENDING_STALE_MS);
-const lines = (rows: Doc<"learnSimTurns">[]): TurnLine[] => rows.map((r) => ({ index: r.index, role: r.role, text: r.text }));
+const lines = (rows: Doc<"learnSimTurns">[], def?: SimCase): TurnLine[] =>
+  rows.map((r) => ({ index: r.index, role: r.role, text: r.text, ...(r.speaker && def?.speakers[r.speaker] ? { name: def.speakers[r.speaker].name } : {}) }));
+
+/** The relative being told the plan, when it isn't the patient. */
+const explainSpeaker = (def: SimCase) => {
+  const key = def.consult?.explain.speaker;
+  return key && key !== "patient" && def.speakers[key] ? key : undefined;
+};
 
 // ── Plain references (the generated api type is at TypeScript's depth limit, TS2589) ──
 
@@ -198,6 +205,8 @@ export const conversation = query({
       text: r.text,
       at: r.at,
       emotion: r.emotion ?? null,
+      speaker: r.speaker ?? null,
+      name: r.speaker ? (def.speakers[r.speaker]?.name ?? null) : null,
       found: (r.found ?? [])
         .map((id) => def.findings[id])
         .filter(Boolean)
@@ -224,7 +233,7 @@ export const beginTurn = internalMutation({
     await spendAi(ctx, member.user._id);
 
     const p = profileOf(def);
-    const history = lines(await turnsOf(ctx, attempt._id, 40));
+    const history = lines(await turnsOf(ctx, attempt._id, 40), def);
     const system =
       stage === "history"
         ? patientSystemPrompt({
@@ -242,6 +251,7 @@ export const beginTurn = internalMutation({
             mood: moodOf(consult.rapport),
             rapport: consult.rapport,
             covered: consult.explainCovered,
+            speakerName: explainSpeaker(def) ? def.speakers[explainSpeaker(def)!].name : undefined,
             knownFacts: consultFacts(def, state, consult)
               .filter((f) => f.shared)
               .map((f) => f.answer),
@@ -307,7 +317,8 @@ export const finishTurn = internalMutation({
       throw err;
     }
     await ctx.db.patch(sent._id, { signals: verdict.signals, jargon: verdict.jargon, covered: result.newlyCovered, rapport: result.consult.rapport });
-    await addTurn(ctx, attempt._id, { stage: "explain", role: "patient", text: verdict.reply, emotion: verdict.emotion });
+    const relative = explainSpeaker(def);
+    await addTurn(ctx, attempt._id, { stage: "explain", role: "patient", text: verdict.reply, emotion: verdict.emotion, ...(relative ? { speaker: relative } : {}) });
     await ctx.db.patch(attempt._id, { consult: result.consult, pendingAt: undefined });
     return { walkedOut: false, stage: result.consult.stage };
   },
@@ -470,7 +481,7 @@ export const beginNote = internalMutation({
     const debrief = buildConsultDebrief(def, state, consult);
     const coachSystem = coachPrompt({
       patient: p,
-      turns: rows.map((r) => ({ index: r.index, role: r.role, text: r.text, signals: (r.signals as Partial<ConsultSignals> | undefined) ?? null })),
+      turns: lines(rows, def).map((line, i) => ({ ...line, signals: (rows[i].signals as Partial<ConsultSignals> | undefined) ?? null })),
       missed: debrief.missedQuestions.map((q) => q.label),
       heldBack: debrief.heldBack.map((h) => ({ label: h.label, askedTooEarly: h.askedTooEarly })),
       explainMissed: debrief.explain.filter((i) => !i.covered).map((i) => i.label),
@@ -546,6 +557,22 @@ export const submitNote = action({
 //   npx convex run --prod learnSimConsult:selfTest '{"script":"good"}'   (good | jargon | rude | inject)
 
 const SCRIPTS: Record<string, string[]> = {
+  // Mrs Adebayo (back-pain-saddle-numbness)
+  ces: [
+    "Good afternoon Mrs Adebayo, I'm Ada, one of the physios. Where exactly is the pain, and does it spread anywhere?",
+    "Thank you. I need to ask some personal questions; I ask everyone with back pain like this. Any numbness between your legs or around your back passage?",
+    "Any change in passing urine?",
+    "Any change with your bowels, or in feeling when you need to go?",
+    "You've had a hard week. Is anything worrying you about all this?",
+  ],
+  // Mrs Okonkwo (shoulder-pain-cardiac)
+  cardiac: [
+    "Good morning Mrs Okonkwo, please sit and catch your breath. When does the pain come on, and what eases it?",
+    "Does moving or lifting your arm make it worse?",
+    "Your daughter mentioned sweating. Any chest tightness, sickness or breathlessness?",
+    "Any heart problems in the family?",
+    "That must be frightening. Is anything worrying you about this pain?",
+  ],
   good: [
     "Good morning Tunde, I'm Ada, one of the physios. Have a seat. What happened?",
     "That sounds painful. Straight after it happened, could you put weight on it? And now?",
@@ -622,7 +649,8 @@ export const selfTest = internalAction({
       });
       if (r.walkedOut) break;
     }
-    if (!args.full || consult.walkedOut) return { model, walkedOut: consult.walkedOut, findings: state.findings, log };
+    // The full run (explanation, note, coaching) uses the ankle case's scripted lines
+    if (!args.full || consult.walkedOut || def.slug !== "ankle-sprain-after-football") return { model, walkedOut: consult.walkedOut, findings: state.findings, log };
 
     // The expert's examination and plan, then the explanation, the note and the coaching
     ({ state, consult } = consultMoveOn(def, state, consult, Date.now()));
@@ -632,7 +660,7 @@ export const selfTest = internalAction({
     turns.push({ index: turns.length, role: "patient", text: question });
     const explainLog = [];
     for (const message of SELFTEST_EXPLAIN) {
-      const system = explainSystemPrompt({ patient: p, spec: def.consult, mood: moodOf(consult.rapport), rapport: consult.rapport, covered: consult.explainCovered, knownFacts: [] });
+      const system = explainSystemPrompt({ patient: p, spec: def.consult, mood: moodOf(consult.rapport), rapport: consult.rapport, covered: consult.explainCovered, knownFacts: [], speakerName: explainSpeaker(def) ? def.speakers[explainSpeaker(def)!].name : undefined });
       const reply = await callLlmJson({ system, user: conversationText(turns, p.firstName, message), maxOutputTokens: 4000, config: model, reasoningEffort: args.effort ?? replyEffort() });
       const parsed = parsePatientVerdict(reply.text, p.firstName);
       if (!parsed) {
@@ -697,7 +725,7 @@ export const beginAudio = internalMutation({
     }
     const row = typeof args.index === "number" ? await turnAt(ctx, attempt._id, args.index) : null;
     if (!row || row.role !== "patient") throw new ConvexError("Nothing to say.");
-    return { prompt: "", text: row.text, voiceId: def.speakers.patient?.voice ?? null };
+    return { prompt: "", text: row.text, voiceId: def.speakers[row.speaker ?? "patient"]?.voice ?? def.speakers.patient?.voice ?? null };
   },
 });
 

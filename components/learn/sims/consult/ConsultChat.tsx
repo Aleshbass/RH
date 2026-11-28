@@ -107,8 +107,9 @@ export function ConsultChat({ attempt, info, onDone }: { attempt: SimAttempt; in
   const speakTurn = useCallback(
     async (t: ConsultTurn) => {
       if (!voiceOn()) return
-      if (t.index === 0 && t.stage === 'history' && info.openingAudio && c.audio) {
-        queueVoice([{ url: voiceUrl(c.slug, c.version, info.openingAudio), onStart: () => setSpeaking(t.index) }], () => setSpeaking(null))
+      const recorded = t.stage === 'history' && c.audio ? info.openingAudioIds[t.index] : undefined
+      if (recorded) {
+        queueVoice([{ url: voiceUrl(c.slug, c.version, recorded), onStart: () => setSpeaking(t.index) }], () => setSpeaking(null))
         return
       }
       if (!info.voice) return
@@ -122,7 +123,7 @@ export function ConsultChat({ attempt, info, onDone }: { attempt: SimAttempt; in
         // The words are on screen; a missing voice isn't worth an error
       }
     },
-    [attempt.attemptId, c.audio, c.slug, c.version, info.openingAudio, info.voice, speakAction]
+    [attempt.attemptId, c.audio, c.slug, c.version, info.openingAudioIds, info.voice, speakAction]
   )
 
   // New patient replies are spoken once. Opening an attempt later doesn't replay old ones (only a
@@ -133,7 +134,7 @@ export function ConsultChat({ attempt, info, onDone }: { attempt: SimAttempt; in
     if (spokenUpTo.current === null) {
       const last = turns[turns.length - 1]
       spokenUpTo.current = last ? last.index : -1
-      if (last && last.role === 'patient' && Date.now() - last.at < 15000) void speakTurn(last)
+      for (const t of turns) if (t.role === 'patient' && Date.now() - t.at < 15000) void speakTurn(t)
       return
     }
     const fresh = turns.filter((t) => t.index > (spokenUpTo.current ?? -1))
@@ -266,6 +267,9 @@ export function ConsultChat({ attempt, info, onDone }: { attempt: SimAttempt; in
     ? { ...attempt.scene, art2d: { ...attempt.scene.art2d, mood: faceFor(lastPatient?.emotion ?? null, info.mood) } }
     : attempt.scene
   const nothingSaid = !shown.some((t) => t.role === 'physio')
+  // The plan is explained to a relative (the patient has left): their card instead of the patient
+  const relative = stage === 'explain' ? info.explainWith : null
+  const shownTurn = (index: number) => turns?.find((x) => x.index === index)
 
   return (
     <PlayerFrame wide>
@@ -290,14 +294,26 @@ export function ConsultChat({ attempt, info, onDone }: { attempt: SimAttempt; in
         left={
           <>
             <div className={STAGE_CLASS}>
+              {relative ? (
+                <div className="learn-fixed-dark relative flex h-full items-center justify-center bg-[radial-gradient(120%_100%_at_50%_0%,rgb(32_56_52)_0%,rgb(8_16_15)_72%)] text-center text-white">
+                  <div>
+                    <span className={cn('mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-white/10 text-2xl font-semibold ring-1 ring-white/15 transition', speaking !== null && 'ring-4 ring-rh-lime/70')}>
+                      {relative.name.slice(0, 1)}
+                    </span>
+                    <p className="mt-3 text-sm font-semibold">{relative.name}</p>
+                    <p className="text-xs text-white/55">{relative.role}</p>
+                  </div>
+                </div>
+              ) : (
               <PatientStage
                 pain={attempt.pain}
                 breathsPerMin={16}
                 speaking={speaking !== null}
-                talking={speaking !== null}
+                talking={speaking !== null && !shownTurn(speaking)?.speaker}
                 lipsUrl={c.audio ? `/sims/${c.slug}/v${c.version}/lips.json` : null}
                 scene={scene}
               />
+              )}
             </div>
             <FindingsPanel findings={attempt.findings} />
           </>
@@ -317,8 +333,12 @@ export function ConsultChat({ attempt, info, onDone }: { attempt: SimAttempt; in
                     </>
                   ) : (
                     <>
-                      <p className="font-semibold text-rh-ink">Explain your plan to {first}.</p>
-                      <p className="mt-1">Use words {he.toLowerCase()} understands, answer {him === 'her' ? 'her' : 'his'} questions honestly, and check {he.toLowerCase()}’s understood.</p>
+                      <p className="font-semibold text-rh-ink">{relative ? `Explain to ${relative.name}.` : `Explain your plan to ${first}.`}</p>
+                      <p className="mt-1">
+                        {relative
+                          ? 'Say what happened and what happens next in plain words, answer the questions honestly, and check you were understood.'
+                          : `Use words ${he.toLowerCase()} understands, answer ${him === 'her' ? 'her' : 'his'} questions honestly, and check ${he.toLowerCase()}’s understood.`}
+                      </p>
                     </>
                   )}
                 </div>
@@ -334,7 +354,7 @@ export function ConsultChat({ attempt, info, onDone }: { attempt: SimAttempt; in
                     )}
                     {t.role === 'patient' && (
                       <div className="flex max-w-[88%] flex-col items-start">
-                        <span className="mb-0.5 ml-3 text-[11px] font-semibold text-rh-ink/50">{first}</span>
+                        <span className="mb-0.5 ml-3 text-[11px] font-semibold text-rh-ink/50">{t.name ?? first}</span>
                         <button
                           type="button"
                           onClick={() => {
@@ -346,7 +366,7 @@ export function ConsultChat({ attempt, info, onDone }: { attempt: SimAttempt; in
                             'rounded-[20px] rounded-tl-md bg-white px-3.5 py-2.5 text-left text-[15px] leading-6 text-rh-ink shadow-sm',
                             speaking === t.index && 'ring-2 ring-rh-lime'
                           )}
-                          aria-label={`${first}: ${t.text}. Tap to hear it again.`}
+                          aria-label={`${t.name ?? first}: ${t.text}. Tap to hear it again.`}
                         >
                           {t.text}
                         </button>
@@ -414,7 +434,7 @@ export function ConsultChat({ attempt, info, onDone }: { attempt: SimAttempt; in
                         }}
                         rows={1}
                         disabled={busy}
-                        placeholder={rec === 'sending' ? 'Listening back…' : stage === 'history' ? `Say something to ${first}…` : `Explain to ${first}…`}
+                        placeholder={rec === 'sending' ? 'Listening back…' : stage === 'history' ? `Say something to ${first}…` : `Explain to ${relative?.name ?? first}…`}
                         className="max-h-32 min-h-11 min-w-0 flex-1 resize-none rounded-[22px] border border-rh-ink/10 bg-rh-cream px-4 py-2.5 text-[15px] leading-6 text-rh-ink outline-none placeholder:text-rh-ink/40 focus:border-rh-ink/30 disabled:opacity-60 [field-sizing:content]"
                         aria-label={`Your message to ${first}`}
                       />

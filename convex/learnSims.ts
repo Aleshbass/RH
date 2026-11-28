@@ -191,6 +191,13 @@ function attemptView(def: SimCase, attempt: Doc<"learnSimAttempts">) {
             patientFirstName: def.speakers.patient?.name ?? def.patient.name.split(" ")[0],
             // The opening line was recorded with the case's voices (history node, line 0)
             openingAudio: def.audio ? `${def.consult.node}-0` : null,
+            // The opening lines were recorded: turn i plays "<node>-i"
+            openingAudioIds: def.audio ? (def.nodes[def.consult.node]?.lines ?? []).map((_, i) => `${def.consult!.node}-${i}`) : [],
+            // Someone other than the patient hears the plan (a relative)
+            explainWith:
+              def.consult.explain.speaker && def.consult.explain.speaker !== "patient" && def.speakers[def.consult.explain.speaker]
+                ? { name: def.speakers[def.consult.explain.speaker].name, role: def.speakers[def.consult.explain.speaker].role }
+                : null,
             // A home programme comes after explaining the plan
             programme: Boolean(def.consult.programme),
             programmeMax: def.consult.programme?.maxItems ?? null,
@@ -296,13 +303,15 @@ const pronoun = (def: SimCase) => (def.patient.sex === "F" ? "her" : "him");
 /** The plan is made: the patient asks their first question. */
 async function enterExplain(ctx: MutationCtx, attemptId: Id<"learnSimAttempts">, def: SimCase) {
   const first = def.speakers.patient?.name ?? def.patient.name.split(" ")[0];
+  const explain = def.consult?.explain;
+  const relative = explain?.speaker && explain.speaker !== "patient" ? explain.speaker : undefined;
   await addTurn(ctx, attemptId, {
     stage: "explain",
     role: "system",
-    text: `You’ve examined ${first} and made your plan. Now explain it to ${pronoun(def)} and answer ${pronoun(def) === "her" ? "her" : "his"} questions.`,
+    text: explain?.intro ?? `You’ve examined ${first} and made your plan. Now explain it to ${pronoun(def)} and answer ${pronoun(def) === "her" ? "her" : "his"} questions.`,
   });
-  const question = def.consult?.explain.questions[0];
-  if (question) await addTurn(ctx, attemptId, { stage: "explain", role: "patient", text: question, emotion: "worried" });
+  const question = explain?.questions[0];
+  if (question) await addTurn(ctx, attemptId, { stage: "explain", role: "patient", text: question, emotion: "worried", ...(relative ? { speaker: relative } : {}) });
 }
 
 /** Closes a consult: the combined score, the attempt finished, points and totals. */
@@ -418,7 +427,8 @@ export const startAttempt = mutation({
       // The patient speaks first (the history node's opening lines)
       const node = def.nodes[def.consult!.node];
       for (const line of node?.lines ?? []) {
-        if (line.speaker === "patient") await addTurn(ctx, attemptId, { stage: "history", role: "patient", text: line.text, emotion: "worried" });
+        // A relative's opening line stays in their name ("Mummy, you were sweating on the stairs")
+        await addTurn(ctx, attemptId, { stage: "history", role: "patient", text: line.text, emotion: "worried", ...(line.speaker !== "patient" ? { speaker: line.speaker } : {}) });
       }
     }
     if (!preview) await ctx.db.patch(doc._id, { plays: doc.plays + 1 });

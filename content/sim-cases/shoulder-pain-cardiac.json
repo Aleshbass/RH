@@ -18,35 +18,82 @@
     "presentingComplaint": "Left shoulder pain for three days. GP letter: 'left shoulder pain, ?frozen shoulder'."
   },
   "speakers": {
-    "patient": { "name": "Mrs Okonkwo", "role": "Patient", "voice": "2vbhUP8zyKg4dEZaTWGn" },
-    "daughter": { "name": "Chiamaka", "role": "Her daughter", "voice": "Z8dg0fyk7p6js7cQ7lgi" },
-    "dispatcher": { "name": "Emergency call-taker", "role": "112 emergency line", "voice": "TyAD2ntJFdDReoa55SLn" }
+    "patient": {
+      "name": "Mrs Okonkwo",
+      "role": "Patient",
+      "voice": "2vbhUP8zyKg4dEZaTWGn"
+    },
+    "daughter": {
+      "name": "Chiamaka",
+      "role": "Her daughter",
+      "voice": "Z8dg0fyk7p6js7cQ7lgi"
+    },
+    "dispatcher": {
+      "name": "Emergency call-taker",
+      "role": "112 emergency line",
+      "voice": "TyAD2ntJFdDReoa55SLn"
+    }
   },
   "monitor": true,
-  "vitals": { "hr": 98, "spo2": 96, "bpSys": 160, "bpDia": 95, "rr": 20 },
+  "vitals": {
+    "hr": 98,
+    "spo2": 96,
+    "bpSys": 160,
+    "bpDia": 95,
+    "rr": 20
+  },
   "pain": 6,
-  "drift": { "everySec": 25, "vitals": { "hr": 4, "spo2": -1, "bpSys": -5, "bpDia": -2, "rr": 1 }, "maxSteps": 8, "stopFlag": "escalated" },
+  "drift": {
+    "everySec": 25,
+    "vitals": {
+      "hr": 4,
+      "spo2": -1,
+      "bpSys": -5,
+      "bpDia": -2,
+      "rr": 1
+    },
+    "maxSteps": 8,
+    "stopFlag": "escalated"
+  },
   "phases": [
-    { "id": "subjective", "label": "History", "budgetSec": 120 },
-    { "id": "objective", "label": "Check", "budgetSec": 90 },
-    { "id": "plan", "label": "Act", "budgetSec": 100 }
+    {
+      "id": "subjective",
+      "label": "History",
+      "budgetSec": 120
+    },
+    {
+      "id": "objective",
+      "label": "Check",
+      "budgetSec": 90
+    },
+    {
+      "id": "plan",
+      "label": "Act",
+      "budgetSec": 100
+    }
   ],
   "startNode": "history",
   "scenes": {
     "seated": {
       "src": "/sims/shoulder-pain-cardiac/v1/scene/seated.webp",
       "alt": "Mrs Okonkwo sitting on the treatment couch in the clinic, rubbing her left shoulder",
-      "art2d": { "pose": "seated" }
+      "art2d": {
+        "pose": "seated"
+      }
     },
     "distress": {
       "src": "/sims/shoulder-pain-cardiac/v1/scene/distress.webp",
       "alt": "Mrs Okonkwo bent forward, pressing her fist to her chest, grey and sweating",
-      "art2d": { "pose": "distress" }
+      "art2d": {
+        "pose": "distress"
+      }
     },
     "resting": {
       "src": "/sims/shoulder-pain-cardiac/v1/scene/resting.webp",
       "alt": "Mrs Okonkwo sitting upright against pillows on the couch, resting and calmer",
-      "art2d": { "pose": "resting" }
+      "art2d": {
+        "pose": "resting"
+      }
     }
   },
   "nodes": {
@@ -56,8 +103,14 @@
       "scene": "seated",
       "prompt": "Mrs Okonkwo, 61, is a retired teacher with type 2 diabetes and high blood pressure. Her GP's letter says 'left shoulder pain, ?frozen shoulder'. She has just climbed the stairs to the clinic and is rubbing her left shoulder. Her daughter Chiamaka is with her. Take her history: each question takes time.",
       "lines": [
-        { "speaker": "patient", "text": "Good morning, physio. This shoulder has been aching on and off since Sunday. Those stairs today nearly finished me." },
-        { "speaker": "daughter", "text": "Mummy, you were sweating on the stairs. Tell them." }
+        {
+          "speaker": "patient",
+          "text": "Good morning, physio. This shoulder has been aching on and off since Sunday. Those stairs today nearly finished me."
+        },
+        {
+          "speaker": "daughter",
+          "text": "Mummy, you were sweating on the stairs. Tell them."
+        }
       ],
       "choices": [
         {
@@ -69,8 +122,13 @@
           "points": 12,
           "tag": "critical",
           "feedback": "Key question. Pain brought on by walking or stairs and eased by rest is the pattern of the heart (angina), not of a stiff shoulder.",
-          "reveals": ["f-exertion"],
-          "reply": { "speaker": "patient", "text": "When I walk fast or climb stairs. It eases after I sit for a few minutes. But today it hasn't fully gone." }
+          "reveals": [
+            "f-exertion"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "When I walk fast or climb stairs. It eases after I sit for a few minutes. But today it hasn't fully gone."
+          }
         },
         {
           "id": "q-movement",
@@ -81,8 +139,13 @@
           "points": 10,
           "tag": "high-yield",
           "feedback": "Good. A frozen shoulder hurts and stiffens when you move it. Pain that doesn't change with movement isn't coming from the joint.",
-          "reveals": ["f-movement"],
-          "reply": { "speaker": "patient", "text": "Not really. I can lift it, and combing my hair is fine. It's a heavy ache, deep inside." }
+          "reveals": [
+            "f-movement"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "Not really. I can lift it, and combing my hair is fine. It's a heavy ache, deep inside."
+          }
         },
         {
           "id": "q-associated",
@@ -93,8 +156,13 @@
           "points": 15,
           "tag": "critical",
           "feedback": "Essential. Sweating, nausea, breathlessness and chest tightness alongside shoulder pain point to the heart. Women and people with diabetes often have little or no classic chest pain.",
-          "reveals": ["f-associated"],
-          "reply": { "speaker": "patient", "text": "Now that you ask... my chest feels tight, like something heavy is sitting on it. And I feel like vomiting." }
+          "reveals": [
+            "f-associated"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "Now that you ask... my chest feels tight, like something heavy is sitting on it. And I feel like vomiting."
+          }
         },
         {
           "id": "q-risk",
@@ -105,8 +173,13 @@
           "points": 8,
           "tag": "high-yield",
           "feedback": "Useful. Diabetes, high blood pressure and a brother with an early heart attack all raise the chance this is her heart.",
-          "reveals": ["f-risk"],
-          "reply": { "speaker": "patient", "text": "Sugar and BP for ten years. My elder brother died of a heart attack at sixty." }
+          "reveals": [
+            "f-risk"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "Sugar and BP for ten years. My elder brother died of a heart attack at sixty."
+          }
         },
         {
           "id": "q-meds",
@@ -117,8 +190,13 @@
           "points": 6,
           "tag": "high-yield",
           "feedback": "Good. Knowing she has no allergies (and isn't on blood thinners) matters if aspirin is given later.",
-          "reveals": ["f-meds"],
-          "reply": { "speaker": "patient", "text": "Metformin and amlodipine. No allergies that I know of." }
+          "reveals": [
+            "f-meds"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "Metformin and amlodipine. No allergies that I know of."
+          }
         },
         {
           "id": "q-night",
@@ -129,7 +207,10 @@
           "points": 0,
           "tag": "neutral",
           "feedback": "Night pain when lying on the shoulder fits a frozen shoulder or rotator cuff problem. A fair question, but it doesn't help you find the dangerous cause here.",
-          "reply": { "speaker": "patient", "text": "Not really. I sleep fine on it." }
+          "reply": {
+            "speaker": "patient",
+            "text": "Not really. I sleep fine on it."
+          }
         },
         {
           "id": "q-goals",
@@ -140,7 +221,27 @@
           "points": -2,
           "tag": "wasteful",
           "feedback": "A good question in a normal assessment, but not now: her story is pointing at something more urgent than function.",
-          "reply": { "speaker": "patient", "text": "Just to go to the market without this pain." }
+          "reply": {
+            "speaker": "patient",
+            "text": "Just to go to the market without this pain."
+          }
+        },
+        {
+          "id": "a-worry",
+          "label": "Is anything worrying you about this pain?",
+          "category": "ask",
+          "costSec": 15,
+          "next": "history",
+          "points": 6,
+          "tag": "high-yield",
+          "feedback": "Good: asking what worries her brought out her own fear that it is her heart. Patients often know; they need permission to say it.",
+          "reveals": [
+            "f-worry"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "Honestly, physio... my brother died of a heart attack at sixty. I keep telling myself it's just my shoulder."
+          }
         },
         {
           "id": "to-exam",
@@ -169,9 +270,18 @@
           "points": 12,
           "tag": "critical",
           "feedback": "Right. A fast pulse, raised blood pressure and fast breathing in someone with these symptoms add to the alarm. Your clinic's BP machine and pulse oximeter are enough.",
-          "reveals": ["f-vitals"],
-          "effects": { "flags": ["monitor"] },
-          "reply": { "speaker": "patient", "text": "Is it high? My heart feels like it's running." }
+          "reveals": [
+            "f-vitals"
+          ],
+          "effects": {
+            "flags": [
+              "monitor"
+            ]
+          },
+          "reply": {
+            "speaker": "patient",
+            "text": "Is it high? My heart feels like it's running."
+          }
         },
         {
           "id": "x-rom",
@@ -182,7 +292,9 @@
           "points": 3,
           "tag": "neutral",
           "feedback": "Full, pain-free movement rules out a frozen shoulder: it would be stiff, especially turning the arm outwards. A useful finding, but it took time while she's unwell.",
-          "reveals": ["f-rom"]
+          "reveals": [
+            "f-rom"
+          ]
         },
         {
           "id": "x-cuff",
@@ -193,7 +305,9 @@
           "points": -2,
           "tag": "wasteful",
           "feedback": "Strong and pain-free, as expected: her pain isn't from the shoulder. Time spent here delays help.",
-          "reveals": ["f-cuff"]
+          "reveals": [
+            "f-cuff"
+          ]
         },
         {
           "id": "x-stairs",
@@ -224,7 +338,10 @@
           "points": 10,
           "tag": "critical",
           "feedback": "Right call. Exertional pain, sweating, nausea and chest tightness in a 61-year-old with diabetes is a heart attack until proven otherwise.",
-          "effects": { "scene": "distress", "pain": 2 }
+          "effects": {
+            "scene": "distress",
+            "pain": 2
+          }
         }
       ]
     },
@@ -234,8 +351,14 @@
       "scene": "distress",
       "prompt": "As you stop, Mrs Okonkwo presses her fist to her chest. She's grey and sweating.",
       "lines": [
-        { "speaker": "patient", "text": "It's squeezing... and my left arm is heavy now." },
-        { "speaker": "daughter", "text": "Mummy! Physio, what is happening to her?" }
+        {
+          "speaker": "patient",
+          "text": "It's squeezing... and my left arm is heavy now."
+        },
+        {
+          "speaker": "daughter",
+          "text": "Mummy! Physio, what is happening to her?"
+        }
       ],
       "choices": [
         {
@@ -247,8 +370,15 @@
           "points": 20,
           "tag": "critical",
           "feedback": "Exactly right. Call an ambulance straight away: paramedics can do an ECG, start treatment and take her directly to a hospital that can open the blocked artery.",
-          "effects": { "flags": ["escalated"] },
-          "reply": { "speaker": "dispatcher", "text": "Emergency line. An ambulance is on its way to your clinic. Keep her resting, don't let her walk, and call me back straight away if she collapses." }
+          "effects": {
+            "flags": [
+              "escalated"
+            ]
+          },
+          "reply": {
+            "speaker": "dispatcher",
+            "text": "Emergency line. An ambulance is on its way to your clinic. Keep her resting, don't let her walk, and call me back straight away if she collapses."
+          }
         },
         {
           "id": "a-ecg",
@@ -259,7 +389,10 @@
           "points": -10,
           "tag": "wasteful",
           "feedback": "An ECG is vital, but sending her walking to get one wastes time and puts her heart under strain. The ambulance crew will do it on arrival.",
-          "reply": { "speaker": "daughter", "text": "Walk across the road? She can barely stand!" }
+          "reply": {
+            "speaker": "daughter",
+            "text": "Walk across the road? She can barely stand!"
+          }
         },
         {
           "id": "a-drive",
@@ -308,8 +441,14 @@
           "points": 8,
           "tag": "high-yield",
           "feedback": "Good. Rest lowers the work of her heart, and a calm voice helps. Don't let her walk, even to the toilet.",
-          "effects": { "scene": "resting", "pain": -1 },
-          "reply": { "speaker": "patient", "text": "Okay... okay. Please don't leave me." }
+          "effects": {
+            "scene": "resting",
+            "pain": -1
+          },
+          "reply": {
+            "speaker": "patient",
+            "text": "Okay... okay. Please don't leave me."
+          }
         },
         {
           "id": "w-aspirin",
@@ -320,7 +459,10 @@
           "points": 10,
           "tag": "high-yield",
           "feedback": "Good first aid. Chewed aspirin early can reduce damage in a heart attack. Only with no allergy, no active bleeding, and where your local policy allows. Tell the paramedics you gave it.",
-          "reply": { "speaker": "patient", "text": "I'm not allergic. Thank you." }
+          "reply": {
+            "speaker": "patient",
+            "text": "I'm not allergic. Thank you."
+          }
         },
         {
           "id": "w-aed",
@@ -331,7 +473,10 @@
           "points": 8,
           "tag": "high-yield",
           "feedback": "Smart. A heart attack can trigger cardiac arrest. Having the defibrillator beside her and a plan for CPR saves lives.",
-          "reply": { "speaker": "daughter", "text": "I'll get it from reception. Where is it kept?" }
+          "reply": {
+            "speaker": "daughter",
+            "text": "I'll get it from reception. Where is it kept?"
+          }
         },
         {
           "id": "w-recheck",
@@ -352,7 +497,10 @@
           "points": -10,
           "tag": "wasteful",
           "feedback": "Her shoulder isn't the problem. Keep her still and resting.",
-          "reply": { "speaker": "patient", "text": "I can't, physio. It's too much." }
+          "reply": {
+            "speaker": "patient",
+            "text": "I can't, physio. It's too much."
+          }
         },
         {
           "id": "w-handover",
@@ -363,7 +511,10 @@
           "points": 15,
           "tag": "critical",
           "feedback": "A clear handover (situation, background, assessment, recommendation, plus the time the pain started, her readings and any aspirin given) speeds up her treatment.",
-          "reply": { "speaker": "patient", "text": "Thank you, physio. Chiamaka, call your father." }
+          "reply": {
+            "speaker": "patient",
+            "text": "Thank you, physio. Chiamaka, call your father."
+          }
         }
       ]
     },
@@ -435,32 +586,352 @@
     }
   },
   "findings": {
-    "f-exertion": { "id": "f-exertion", "label": "Pattern", "detail": "Comes on walking fast or climbing stairs, eases with a few minutes' rest; today not fully settling.", "abnormal": true },
-    "f-movement": { "id": "f-movement", "label": "Shoulder movement", "detail": "No change with moving or lifting the arm. A deep, heavy ache.", "abnormal": true },
-    "f-associated": { "id": "f-associated", "label": "Other symptoms", "detail": "Chest tightness ('something heavy sitting on it'), nausea, sweating on the stairs.", "abnormal": true },
-    "f-risk": { "id": "f-risk", "label": "Heart risk", "detail": "Type 2 diabetes and high blood pressure for ten years; brother died of a heart attack at 60.", "abnormal": true },
-    "f-meds": { "id": "f-meds", "label": "Medicines", "detail": "Metformin, amlodipine. No known allergies; no blood thinners." },
-    "f-vitals": { "id": "f-vitals", "label": "Vital signs", "detail": "Pulse fast, blood pressure raised, breathing fast; oxygen at the low end of normal.", "abnormal": true },
-    "f-rom": { "id": "f-rom", "label": "Shoulder range", "detail": "Full active and passive movement, pain-free: not a frozen shoulder." },
-    "f-cuff": { "id": "f-cuff", "label": "Rotator cuff", "detail": "Resisted tests strong and pain-free." }
+    "f-exertion": {
+      "id": "f-exertion",
+      "label": "Pattern",
+      "detail": "Comes on walking fast or climbing stairs, eases with a few minutes' rest; today not fully settling.",
+      "abnormal": true
+    },
+    "f-movement": {
+      "id": "f-movement",
+      "label": "Shoulder movement",
+      "detail": "No change with moving or lifting the arm. A deep, heavy ache.",
+      "abnormal": true
+    },
+    "f-associated": {
+      "id": "f-associated",
+      "label": "Other symptoms",
+      "detail": "Chest tightness ('something heavy sitting on it'), nausea, sweating on the stairs.",
+      "abnormal": true
+    },
+    "f-risk": {
+      "id": "f-risk",
+      "label": "Heart risk",
+      "detail": "Type 2 diabetes and high blood pressure for ten years; brother died of a heart attack at 60.",
+      "abnormal": true
+    },
+    "f-meds": {
+      "id": "f-meds",
+      "label": "Medicines",
+      "detail": "Metformin, amlodipine. No known allergies; no blood thinners."
+    },
+    "f-vitals": {
+      "id": "f-vitals",
+      "label": "Vital signs",
+      "detail": "Pulse fast, blood pressure raised, breathing fast; oxygen at the low end of normal.",
+      "abnormal": true
+    },
+    "f-rom": {
+      "id": "f-rom",
+      "label": "Shoulder range",
+      "detail": "Full active and passive movement, pain-free: not a frozen shoulder."
+    },
+    "f-cuff": {
+      "id": "f-cuff",
+      "label": "Rotator cuff",
+      "detail": "Resisted tests strong and pain-free."
+    },
+    "f-worry": {
+      "id": "f-worry",
+      "label": "Main worry",
+      "detail": "Frightened it is her heart: her brother died of a heart attack at 60."
+    }
   },
-  "mustDo": ["q-onset", "q-associated", "x-vitals", "to-act", "a-call", "w-handover"],
-  "autoFail": ["x-stairs", "x-treat", "a-drive", "a-wait", "a-home"],
-  "expertPath": ["q-onset", "q-movement", "q-associated", "q-risk", "q-meds", "to-exam", "x-vitals", "to-act", "a-call", "w-position", "w-aspirin", "w-aed", "w-handover"],
+  "mustDo": [
+    "q-onset",
+    "q-associated",
+    "x-vitals",
+    "to-act",
+    "a-call",
+    "w-handover"
+  ],
+  "autoFail": [
+    "x-stairs",
+    "x-treat",
+    "a-drive",
+    "a-wait",
+    "a-home"
+  ],
+  "expertPath": [
+    "q-onset",
+    "q-movement",
+    "q-associated",
+    "q-risk",
+    "a-worry",
+    "q-meds",
+    "to-exam",
+    "x-vitals",
+    "to-act",
+    "a-call",
+    "w-position",
+    "w-aspirin",
+    "w-aed",
+    "w-handover"
+  ],
   "passMark": 70,
   "learningPoints": [
     "Shoulder pain that comes on with walking or stairs and eases with rest, and doesn't change when the arm moves, isn't mechanical. Think of the heart.",
     "Women, older adults and people with diabetes often have 'atypical' heart attacks: shoulder, arm, jaw or back pain, breathlessness, nausea, sweating or tiredness, sometimes with little chest pain.",
     "Never test exertion (stairs, exercise) to see what brings the pain on when the heart could be the cause.",
     "Suspected heart attack: stop, keep them at rest and sitting up, call an ambulance (112 in Nigeria), check vitals, chewed aspirin 300 mg if no allergy and your protocol allows, fetch the AED and be ready for CPR, then hand over with SBAR. Never send them by private car or home.",
-    "A referral label ('?frozen shoulder') is a starting point, not a diagnosis. Screen every patient for red flags."
+    "A referral label ('?frozen shoulder') is a starting point, not a diagnosis. Screen every patient for red flags.",
+    "Patients often play down frightening symptoms (\"I don't want to make a fuss\"). Ask directly and kindly, and ask what worries them: many already suspect their heart."
   ],
   "references": [
-    { "label": "NICE CG95. Recent-onset chest pain of suspected cardiac origin: assessment and diagnosis (2010, updated 2016).", "url": "https://www.nice.org.uk/guidance/cg95" },
-    { "label": "Byrne RA, et al. 2023 ESC Guidelines for the management of acute coronary syndromes. Eur Heart J. 2023;44(38):3720–3826." },
-    { "label": "Zideman DA, et al. European Resuscitation Council Guidelines 2021: First aid. Resuscitation. 2021;161:270–290." },
-    { "label": "Canto JG, et al. Association of age and sex with myocardial infarction symptom presentation and in-hospital mortality. JAMA. 2012;307(8):813–822." },
-    { "label": "Goodman CC, Heick J, Lazaro RT. Differential Diagnosis for Physical Therapists: Screening for Referral. 6th ed. Elsevier; 2018." },
-    { "label": "Institute for Healthcare Improvement. SBAR tool: Situation-Background-Assessment-Recommendation." }
-  ]
+    {
+      "label": "NICE CG95. Recent-onset chest pain of suspected cardiac origin: assessment and diagnosis (2010, updated 2016).",
+      "url": "https://www.nice.org.uk/guidance/cg95"
+    },
+    {
+      "label": "Byrne RA, et al. 2023 ESC Guidelines for the management of acute coronary syndromes. Eur Heart J. 2023;44(38):3720–3826."
+    },
+    {
+      "label": "Zideman DA, et al. European Resuscitation Council Guidelines 2021: First aid. Resuscitation. 2021;161:270–290."
+    },
+    {
+      "label": "Canto JG, et al. Association of age and sex with myocardial infarction symptom presentation and in-hospital mortality. JAMA. 2012;307(8):813–822."
+    },
+    {
+      "label": "Goodman CC, Heick J, Lazaro RT. Differential Diagnosis for Physical Therapists: Screening for Referral. 6th ed. Elsevier; 2018."
+    },
+    {
+      "label": "Institute for Healthcare Improvement. SBAR tool: Situation-Background-Assessment-Recommendation."
+    }
+  ],
+  "consult": {
+    "node": "history",
+    "moveOn": "to-exam",
+    "persona": {
+      "voice": "Warm, proud and a little stubborn; plays down her symptoms ('it's just this shoulder'). Polite Nigerian English; calls the physio 'physio' or 'my dear'. Gets breathless if she talks for long.",
+      "background": "Retired secondary school teacher in Lagos. Lives with her husband. Her daughter Chiamaka, 28, drove her here and is sitting beside her. She climbed the clinic stairs today.",
+      "worries": [
+        "Getting this shoulder sorted so she can go to the market",
+        "Not making a fuss"
+      ],
+      "annoyances": [
+        "Being talked down to",
+        "Being rushed",
+        "Medical words"
+      ],
+      "cue": "Early on, once, mention that you feel a bit unwell today (for example: \"I'm just tired today, my dear.\") without explaining unless asked.",
+      "unknown": "No, I don't think so.",
+      "language": "If the physio speaks Igbo or Pidgin, answer in kind.",
+      "walkout": "Mrs Okonkwo decided you weren’t taking her seriously and went home with Chiamaka. That evening she collapsed at home with a heart attack."
+    },
+    "startRapport": 55,
+    "guarded": [
+      {
+        "choice": "q-associated",
+        "minRapport": 50,
+        "deflect": "It's just this shoulder, physio. I don't want to make a fuss."
+      },
+      {
+        "choice": "a-worry",
+        "minRapport": 60,
+        "deflect": "I'm fine, my dear. Just help my shoulder."
+      }
+    ],
+    "explain": {
+      "speaker": "daughter",
+      "who": "Chiamaka, 28, Mrs Okonkwo's daughter. She drove her mother here. Her mother has just left in the ambulance and Chiamaka is frightened and shaking, about to follow her to the hospital.",
+      "intro": "The paramedics have taken Mrs Okonkwo to hospital. Chiamaka is still here, frightened. Explain what happened and what happens next.",
+      "questions": [
+        "What happened to Mummy? Is it her heart?",
+        "Is she going to be okay?",
+        "But why did it look like a shoulder problem?",
+        "What do I tell my father? What should I do now?"
+      ],
+      "items": [
+        {
+          "id": "e-plain",
+          "label": "Explained in plain words that it looks like a heart attack: part of the heart isn’t getting enough blood",
+          "points": 6
+        },
+        {
+          "id": "e-honest",
+          "label": "Was honest that it is serious, and that getting help quickly gives her the best chance (no false promises)",
+          "points": 5
+        },
+        {
+          "id": "e-why",
+          "label": "Explained why heart pain can show up in the shoulder or arm",
+          "points": 3
+        },
+        {
+          "id": "e-next",
+          "label": "Explained what happens at hospital (a heart tracing, and doctors may open the blocked artery)",
+          "points": 3
+        },
+        {
+          "id": "e-practical",
+          "label": "Practical next steps: which hospital, follow safely (no speeding), call her father, bring her medicines",
+          "points": 4
+        },
+        {
+          "id": "e-support",
+          "label": "Acknowledged how frightened she is",
+          "points": 3
+        },
+        {
+          "id": "e-check",
+          "label": "Checked she understood, or asked her to say it back",
+          "points": 2
+        }
+      ]
+    },
+    "note": {
+      "rubric": [
+        {
+          "id": "s-pattern",
+          "section": "S",
+          "label": "Pain comes on walking fast or climbing stairs, eases with rest; not settling today",
+          "points": 4,
+          "finding": "f-exertion"
+        },
+        {
+          "id": "s-movement",
+          "section": "S",
+          "label": "Not affected by moving or lifting the arm (a deep, heavy ache)",
+          "points": 3,
+          "finding": "f-movement"
+        },
+        {
+          "id": "s-associated",
+          "section": "S",
+          "label": "Chest tightness, nausea, sweating on the stairs",
+          "points": 5,
+          "finding": "f-associated"
+        },
+        {
+          "id": "s-risk",
+          "section": "S",
+          "label": "Diabetes and high blood pressure for 10 years; brother died of a heart attack at 60",
+          "points": 3,
+          "finding": "f-risk"
+        },
+        {
+          "id": "s-meds",
+          "section": "S",
+          "label": "Metformin and amlodipine; no allergies",
+          "points": 2,
+          "finding": "f-meds"
+        },
+        {
+          "id": "s-worry",
+          "section": "S",
+          "label": "Her fear that it is her heart",
+          "points": 1,
+          "finding": "f-worry"
+        },
+        {
+          "id": "o-vitals",
+          "section": "O",
+          "label": "Vital signs: pulse fast, blood pressure raised, breathing fast, oxygen low-normal",
+          "points": 5,
+          "finding": "f-vitals"
+        },
+        {
+          "id": "a-acs",
+          "section": "A",
+          "label": "Suspected heart attack (acute coronary syndrome), not a shoulder problem",
+          "points": 6
+        },
+        {
+          "id": "p-ambulance",
+          "section": "P",
+          "label": "Emergency ambulance called (112); kept at rest, sitting up",
+          "points": 5
+        },
+        {
+          "id": "p-aspirin",
+          "section": "P",
+          "label": "Aspirin 300 mg chewed (no allergy), per clinic protocol",
+          "points": 2
+        },
+        {
+          "id": "p-aed",
+          "section": "P",
+          "label": "AED brought to her side, ready for CPR",
+          "points": 1
+        },
+        {
+          "id": "p-handover",
+          "section": "P",
+          "label": "Handover to the paramedics (SBAR) and times recorded",
+          "points": 2
+        }
+      ],
+      "model": {
+        "S": "61F, retired teacher. GP letter: L shoulder pain ?frozen shoulder. Pain 3/7, comes on walking fast/climbing stairs, eases after a few minutes' rest; today not settling. Not affected by arm movement: deep, heavy ache. Chest tightness ('something heavy sitting on it'), nausea, sweating on the stairs. T2DM and HTN for 10 years; brother died of MI at 60. Meds: metformin, amlodipine. NKDA. Frightened it is her heart.",
+        "O": "Breathless after the stairs, sweaty. HR fast, BP raised, RR raised, SpO2 low-normal. No shoulder testing done (not appropriate given the presentation).",
+        "A": "Suspected acute coronary syndrome presenting as exertional left shoulder pain. Not musculoskeletal. Emergency.",
+        "P": "Treatment stopped. Kept at rest, sitting up; tight clothing loosened. 112 called (time recorded): \"suspected heart attack\". Aspirin 300 mg chewed per clinic protocol (no allergy). AED brought to her side. Vitals rechecked every few minutes. SBAR handover to the paramedics (time recorded). Daughter informed and supported."
+      }
+    },
+    "expert": {
+      "label": "A model consultation (draft until a physio signs this case off)",
+      "transcript": [
+        {
+          "speaker": "physio",
+          "text": "Good morning, Mrs Okonkwo. I'm one of the physios. Please sit down and catch your breath. When does the pain come on? Does anything bring it on or ease it?",
+          "note": "Notices she is breathless, sits her down, then asks about the pattern."
+        },
+        {
+          "speaker": "patient",
+          "text": "When I walk fast or climb stairs. It eases after I sit for a few minutes. But today it hasn't fully gone."
+        },
+        {
+          "speaker": "physio",
+          "text": "So it comes on with walking and stairs, and settles with rest. Does moving or lifting your arm make it worse?",
+          "note": "Summarises, then checks whether it is really the shoulder."
+        },
+        {
+          "speaker": "patient",
+          "text": "Not really. I can lift it, and combing my hair is fine. It's a heavy ache, deep inside."
+        },
+        {
+          "speaker": "physio",
+          "text": "Chiamaka mentioned sweating. Any sweating, sickness, breathlessness, or pain in your chest, jaw or arm?",
+          "note": "Picks up the daughter's cue."
+        },
+        {
+          "speaker": "patient",
+          "text": "Now that you ask... my chest feels tight, like something heavy is sitting on it. And I feel like vomiting."
+        },
+        {
+          "speaker": "physio",
+          "text": "Thank you for telling me. Any heart problems, high cholesterol, or heart trouble in the family?"
+        },
+        {
+          "speaker": "patient",
+          "text": "Sugar and BP for ten years. My elder brother died of a heart attack at sixty."
+        },
+        {
+          "speaker": "physio",
+          "text": "That must be on your mind. Is anything worrying you about this pain?",
+          "note": "Gives her room to say her fear out loud."
+        },
+        {
+          "speaker": "patient",
+          "text": "Honestly, physio... my brother died of a heart attack at sixty. I keep telling myself it's just my shoulder."
+        },
+        {
+          "speaker": "physio",
+          "text": "I understand, and I am taking it seriously. What medicines do you take, and are you allergic to anything?",
+          "note": "Needed before aspirin."
+        },
+        {
+          "speaker": "patient",
+          "text": "Metformin and amlodipine. No allergies that I know of."
+        },
+        {
+          "speaker": "physio",
+          "text": "Thank you. I'm going to check your pulse, blood pressure and oxygen now. Please stay sitting and rest; no more stairs today.",
+          "note": "Exertional pain with sweating and risk factors: no shoulder tests. Vitals, and keep her at rest."
+        }
+      ]
+    },
+    "maxTurns": 20,
+    "explainTurns": 8
+  }
 }

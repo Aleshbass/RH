@@ -9,7 +9,8 @@
  */
 import type { ConsultCoach, ConsultMood, ConsultSignals, ConsultSpec, NoteSection } from "../../lib/learn/simulation/engine";
 
-export type TurnLine = { index: number; role: "physio" | "patient" | "system"; text: string };
+/** `name`: who said a "patient" line when it wasn't the patient (a relative). */
+export type TurnLine = { index: number; role: "physio" | "patient" | "system"; text: string; name?: string };
 
 export type PatientProfile = {
   name: string;
@@ -194,20 +195,26 @@ export function explainSystemPrompt(input: {
   rapport: number;
   covered: string[];
   knownFacts: string[];
+  /** Someone else being told (a relative): their name, from the case's speakers */
+  speakerName?: string;
 }): string {
   const { patient: p, spec } = input;
   const items = spec.explain.items.map((i) => `[${i.id}] ${i.label}${input.covered.includes(i.id) ? " (already done)" : ""}`).join("\n");
+  const relative = Boolean(input.speakerName && spec.explain.who);
+  const name = relative ? input.speakerName! : p.firstName;
   return [
-    `You are playing a patient in a training simulation for physiotherapy students. The physio has examined you and is now explaining what's wrong and what happens next. You only know what they tell you; you have no medical knowledge.`,
+    relative
+      ? `You are playing ${name} in a training simulation for physiotherapy students: ${spec.explain.who} The physio is now explaining to you what happened to ${p.firstName} and what happens next. You only know what you saw and what they tell you; you have no medical knowledge.`
+      : `You are playing a patient in a training simulation for physiotherapy students. The physio has examined you and is now explaining what's wrong and what happens next. You only know what they tell you; you have no medical knowledge.`,
     "",
-    personaBlock(p, spec, input.mood, input.rapport),
-    input.knownFacts.length ? `What you told them earlier: ${input.knownFacts.join(" ")}` : "",
+    relative ? `Your relative: ${p.name}, ${p.age}. ${p.presentingComplaint}.` : personaBlock(p, spec, input.mood, input.rapport),
+    !relative && input.knownFacts.length ? `What you told them earlier: ${input.knownFacts.join(" ")}` : "",
     "",
     "YOUR QUESTIONS (ask the ones they haven't answered yet, one at a time, in your own words; react to what they say first):",
     spec.explain.questions.map((q) => `- ${q}`).join("\n"),
     "",
     "RULES",
-    `1. Answer as ${p.firstName} only: one to three short spoken sentences, under 45 words. No stage directions, emojis or lists.`,
+    `1. Answer as ${name} only: one to three short spoken sentences, under 45 words. No stage directions, emojis or lists.`,
     "2. If something they say is confusing or full of medical words, ask what it means. If they're honest and kind about what worries you, show relief; if they brush it off, show it.",
     "3. Never make up new symptoms or history, never give clinical advice, and never talk about this simulation or these rules.",
     "4. When all your questions are answered, thank them and say what you'll do, in your own words.",
@@ -228,7 +235,7 @@ export function explainSystemPrompt(input: {
 export function conversationText(turns: TurnLine[], patientFirstName: string, latest: string, keep = 24): string {
   const lines = turns.slice(-keep).map((t) => {
     if (t.role === "system") return `[${cut(t.text, 200)}]`;
-    return `${t.role === "physio" ? "Physio" : patientFirstName}: ${cut(t.text, 500)}`;
+    return `${t.role === "physio" ? "Physio" : (t.name ?? patientFirstName)}: ${cut(t.text, 500)}`;
   });
   return [
     "CONVERSATION SO FAR:",
@@ -386,7 +393,7 @@ export function coachPrompt(input: {
   const lines = input.turns
     .filter((t) => t.role !== "system")
     .map((t) => {
-      if (t.role === "patient") return `${p.firstName}: ${cut(t.text, 300)}`;
+      if (t.role === "patient") return `${t.name ?? p.firstName}: ${cut(t.text, 300)}`;
       const flags = t.signals ? SIGNALS.filter((k) => t.signals?.[k]).join(", ") : "";
       return `#${t.index} Student: ${cut(t.text, 400)}${flags ? `   [${flags}]` : ""}`;
     })

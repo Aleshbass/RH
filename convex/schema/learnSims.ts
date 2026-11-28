@@ -71,6 +71,8 @@ export const learnSimTables = {
     index: v.number(),
     stage: v.union(v.literal("history"), v.literal("explain")),
     role: v.union(v.literal("physio"), v.literal("patient"), v.literal("system")),
+    // Who said a "patient" line when it wasn't the patient (a relative): a key of the case's speakers
+    speaker: v.optional(v.string()),
     text: v.string(),
     emotion: v.optional(v.string()),
     // Learner messages: which facts it asked about, what it did, unexplained words

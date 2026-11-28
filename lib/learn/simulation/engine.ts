@@ -628,8 +628,12 @@ export type ConsultSpec = {
   startRapport: number
   /** Facts held back until trust is high enough; `deflect` is how they dodge it before then */
   guarded: { choice: string; minRapport: number; deflect: string }[]
-  /** After the plan: the patient's questions and what a good explanation covers */
-  explain: { questions: string[]; items: { id: string; label: string; points: number }[] }
+  /**
+   * After the plan: the questions and what a good explanation covers. `speaker`: someone else you
+   * explain to (a speaker key, e.g. the daughter once the patient has left in the ambulance), with
+   * `who` describing them for the AI; `intro` sets the scene.
+   */
+  explain: { questions: string[]; items: { id: string; label: string; points: number }[]; speaker?: string; who?: string; intro?: string }
   note: {
     /** `finding`: only creditable if the learner found it (otherwise it was made up) */
     rubric: { id: string; section: NoteSection; label: string; points: number; finding?: string }[]
@@ -1156,6 +1160,8 @@ function validateConsult(def: SimCase): string[] {
     if (!(item.points > 0)) say(`explain item "${item.id}" needs points`)
   }
   if (!spec.explain.questions.length) say('explain needs the patient’s questions')
+  if (spec.explain.speaker && !def.speakers[spec.explain.speaker]) say(`explain speaker "${spec.explain.speaker}" isn't in speakers`)
+  if (spec.explain.speaker && spec.explain.speaker !== 'patient' && !spec.explain.who) say('explain needs "who" when someone other than the patient is told')
   const rubricIds = new Set<string>()
   for (const r of spec.note.rubric) {
     if (rubricIds.has(r.id)) say(`rubric item "${r.id}" is used twice`)

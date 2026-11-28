@@ -213,6 +213,23 @@
           }
         },
         {
+          "id": "a-worry",
+          "label": "Is anything worrying you about all this?",
+          "category": "ask",
+          "costSec": 15,
+          "next": "history",
+          "points": 5,
+          "tag": "high-yield",
+          "feedback": "Good: practical worries (childcare, work) are why people delay going to hospital. Knowing them lets you help her solve them, so she actually goes.",
+          "reveals": [
+            "f-worry"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "My husband is in Abuja this week, and my children come home from school at four. If I go to hospital, who will pick them? And our exams start on Monday."
+          }
+        },
+        {
           "id": "to-exam",
           "label": "Move on to the examination",
           "costSec": 0,
@@ -497,6 +514,11 @@
       "id": "f-rom",
       "label": "Lumbar movement",
       "detail": "Flexion limited to knee level by pain."
+    },
+    "f-worry": {
+      "id": "f-worry",
+      "label": "Main worry",
+      "detail": "Who will collect her children (husband away in Abuja), and missing school exams next week."
     }
   },
   "mustDo": [
@@ -519,6 +541,7 @@
     "q-bowel",
     "q-sexual",
     "q-serious",
+    "a-worry",
     "to-exam",
     "x-saddle",
     "x-neuro",
@@ -532,7 +555,8 @@
     "Suspected cauda equina syndrome is an emergency: same-day referral to emergency care for an MRI and a spinal surgical review. Never a routine letter.",
     "Hours matter. Outcomes are best when the nerves are decompressed before the patient goes into urinary retention.",
     "Safety-net in plain words, and help with practical barriers (transport, cost, childcare) so the patient actually goes.",
-    "Don't start exercise or electrotherapy for back pain until the red flags are ruled out."
+    "Don't start exercise or electrotherapy for back pain until the red flags are ruled out.",
+    "People are embarrassed to mention saddle numbness or bladder changes. Explain why you are asking, ask plainly and kindly, and they will tell you; rush them and they may not."
   ],
   "references": [
     {
@@ -549,5 +573,276 @@
     {
       "label": "Greenhalgh S, et al. Development of a toolkit for early identification of cauda equina syndrome. Prim Health Care Res Dev. 2016;17(6):559–567."
     }
-  ]
+  ],
+  "consult": {
+    "node": "history",
+    "moveOn": "to-exam",
+    "persona": {
+      "voice": "Polite, a little formal and tired from the pain. Clear Nigerian English, sometimes ending a sentence with 'o' or 'ehn'. Shy about private matters: she talks about them only when the physio asks gently and explains why.",
+      "background": "Teaches JSS 3 at a secondary school in Ibadan. Lives on the third floor; when there is no light they carry water up from the tank. Married with two children in primary school. Her husband travels for work.",
+      "worries": [
+        "The pain now going down both legs",
+        "Being away from school"
+      ],
+      "annoyances": [
+        "Being rushed",
+        "Medical words",
+        "Being asked private questions with no reason given"
+      ],
+      "cue": "Early on, once, hint that something else is bothering you that is hard to say (for example: \"There are other things... it's a bit embarrassing.\") without explaining unless asked kindly.",
+      "unknown": "No, nothing like that.",
+      "language": "If the physio speaks Yoruba or Pidgin, answer in kind.",
+      "walkout": "Mrs Adebayo felt you weren’t listening and went home to rest. That night she couldn’t pass urine at all and was rushed to hospital. The surgery came too late to fully save her bladder."
+    },
+    "startRapport": 55,
+    "guarded": [
+      {
+        "choice": "q-saddle",
+        "minRapport": 50,
+        "deflect": "No... I don't think so."
+      },
+      {
+        "choice": "q-sexual",
+        "minRapport": 55,
+        "deflect": "Ehn... I'd rather not talk about that."
+      },
+      {
+        "choice": "a-worry",
+        "minRapport": 60,
+        "deflect": "It's fine. Let's just sort out my back."
+      }
+    ],
+    "explain": {
+      "intro": "You’ve arranged for Mrs Adebayo to go to the emergency department now. Before she leaves, explain what you think is happening and what will happen next.",
+      "questions": [
+        "What do you think is wrong with me?",
+        "Why can’t it wait until tomorrow?",
+        "What will they do at the hospital?",
+        "What do I tell the doctors when I get there?"
+      ],
+      "items": [
+        {
+          "id": "e-plain",
+          "label": "Explained in plain words that the nerves at the bottom of her spine, which work her bladder, bowel and legs, may be squashed",
+          "points": 6
+        },
+        {
+          "id": "e-urgent",
+          "label": "Explained why it can’t wait: without quick treatment, the damage to bladder and bowel control can be permanent",
+          "points": 6
+        },
+        {
+          "id": "e-next",
+          "label": "Explained what happens at hospital: an urgent scan (MRI) and possibly an operation",
+          "points": 4
+        },
+        {
+          "id": "e-letter",
+          "label": "Gave her a letter with your findings, or said you would phone ahead",
+          "points": 3
+        },
+        {
+          "id": "e-practical",
+          "label": "Helped with the practical problems (the children, getting there with someone, not driving herself)",
+          "points": 4
+        },
+        {
+          "id": "e-check",
+          "label": "Checked she understood, or asked her to say it back",
+          "points": 3
+        }
+      ]
+    },
+    "note": {
+      "rubric": [
+        {
+          "id": "s-mech",
+          "section": "S",
+          "label": "Low back pain for 5 days after carrying a 25-litre keg of water up the stairs",
+          "points": 2
+        },
+        {
+          "id": "s-legs",
+          "section": "S",
+          "label": "Pain now down both legs to the feet, since yesterday",
+          "points": 3,
+          "finding": "f-bilateral"
+        },
+        {
+          "id": "s-saddle",
+          "section": "S",
+          "label": "Numbness around the back passage when wiping (reported)",
+          "points": 4,
+          "finding": "f-saddle"
+        },
+        {
+          "id": "s-bladder",
+          "section": "S",
+          "label": "New straining to pass urine since this morning; unsure she empties fully",
+          "points": 4,
+          "finding": "f-bladder"
+        },
+        {
+          "id": "s-bowel",
+          "section": "S",
+          "label": "Reduced awareness of needing to open her bowels; no incontinence",
+          "points": 3,
+          "finding": "f-bowel"
+        },
+        {
+          "id": "s-sexual",
+          "section": "S",
+          "label": "Sexual function asked about: no change",
+          "points": 1,
+          "finding": "f-sexual"
+        },
+        {
+          "id": "s-screen",
+          "section": "S",
+          "label": "No weight loss, fever, night pain or history of cancer",
+          "points": 2,
+          "finding": "f-screen"
+        },
+        {
+          "id": "s-worry",
+          "section": "S",
+          "label": "Her practical worries (children, school exams)",
+          "points": 1,
+          "finding": "f-worry"
+        },
+        {
+          "id": "o-saddle",
+          "section": "O",
+          "label": "Reduced saddle sensation on testing (S3–S5), both sides",
+          "points": 5,
+          "finding": "f-saddle-sens"
+        },
+        {
+          "id": "o-neuro",
+          "section": "O",
+          "label": "S1 signs on both sides: weak plantarflexion, reduced ankle reflexes, reduced sensation on the outer feet",
+          "points": 4,
+          "finding": "f-neuro"
+        },
+        {
+          "id": "o-slr",
+          "section": "O",
+          "label": "Straight leg raise positive both sides (40° left, 50° right)",
+          "points": 1,
+          "finding": "f-slr"
+        },
+        {
+          "id": "a-ces",
+          "section": "A",
+          "label": "Suspected cauda equina syndrome (incomplete: not yet in retention)",
+          "points": 6
+        },
+        {
+          "id": "p-emergency",
+          "section": "P",
+          "label": "Emergency referral today to the emergency department for an urgent MRI and spinal surgical review",
+          "points": 6
+        },
+        {
+          "id": "p-handover",
+          "section": "P",
+          "label": "Phoned ahead and/or wrote a referral letter with the findings",
+          "points": 2
+        },
+        {
+          "id": "p-advice",
+          "section": "P",
+          "label": "Advice given and recorded (what to do if worse; she is not to drive herself), with the time",
+          "points": 2
+        }
+      ],
+      "model": {
+        "S": "42F teacher. Low back pain 5/7 after carrying a 25 L keg of water up three flights. Since yesterday, pain down both legs to the feet. Reports numbness around the anus when wiping. New hesitancy/straining to pass urine since this morning, unsure of complete emptying. Reduced awareness of the need to open bowels; no incontinence. No change in sexual function. No weight loss, fever, night pain or history of cancer. Paracetamol and diclofenac, no relief. Worried about childcare (husband away) and school exams.",
+        "O": "Saddle sensation (with chaperone, consent): reduced light touch and pinprick around the perianal area and inner buttocks, S3–S5, both sides. Lower limbs: weak ankle plantarflexion bilaterally (S1), ankle reflexes reduced bilaterally, reduced sensation over the lateral borders of both feet. SLR positive 40° L, 50° R. No digital rectal examination (not within physio scope here).",
+        "A": "Suspected cauda equina syndrome, incomplete (CES-I): bilateral radicular symptoms, saddle anaesthesia, new urinary hesitancy, altered bowel sensation. Emergency.",
+        "P": "Emergency referral to the ED today for urgent MRI and spinal surgical review. Phoned the ED registrar ahead; referral letter with findings given. Explained the urgency in plain language; husband contacted, a neighbour to collect the children; she is not to drive herself. Advised to tell ED staff at once if she cannot pass urine at all. Time of referral recorded."
+      }
+    },
+    "expert": {
+      "label": "A model consultation (draft until a physio signs this case off)",
+      "transcript": [
+        {
+          "speaker": "physio",
+          "text": "Good afternoon, Mrs Adebayo. I'm one of the physios here. Sit however is comfortable for you. Where exactly is the pain, and does it spread anywhere?",
+          "note": "Introduces themself, makes her comfortable, then asks about the pain."
+        },
+        {
+          "speaker": "patient",
+          "text": "In the middle of my back. And since yesterday it goes down both legs, all the way to my feet."
+        },
+        {
+          "speaker": "physio",
+          "text": "Both legs since yesterday: thank you, that's important. I'm going to ask some personal questions now. I ask everyone with back pain like this, because the answers tell me how the nerves are working. Is that okay?",
+          "note": "Pain in both legs is a warning sign. Explains why personal questions are coming, and asks permission."
+        },
+        {
+          "speaker": "patient",
+          "text": "Okay... there are other things. It's a bit embarrassing."
+        },
+        {
+          "speaker": "physio",
+          "text": "Take your time. Have you noticed any numbness or tingling between your legs, or around your back passage?",
+          "note": "Gentle, specific words for saddle numbness."
+        },
+        {
+          "speaker": "patient",
+          "text": "Now that you ask... when I wipe after the toilet, it feels numb. Like it's not my own skin."
+        },
+        {
+          "speaker": "physio",
+          "text": "Thank you for telling me. Any change in passing urine?"
+        },
+        {
+          "speaker": "patient",
+          "text": "Since this morning I have to strain to pass urine, and I'm not sure it all comes out."
+        },
+        {
+          "speaker": "physio",
+          "text": "And your bowels: any change in control, or in feeling when you need to go?"
+        },
+        {
+          "speaker": "patient",
+          "text": "No accident. But I can't really feel when I need to go."
+        },
+        {
+          "speaker": "physio",
+          "text": "Any change in sexual function? Again, I ask everyone with this kind of back pain."
+        },
+        {
+          "speaker": "patient",
+          "text": "I haven't noticed anything. It's been a painful week."
+        },
+        {
+          "speaker": "physio",
+          "text": "Any weight loss, fever, pain at night, or a history of cancer?",
+          "note": "The other serious causes, quickly."
+        },
+        {
+          "speaker": "patient",
+          "text": "No, nothing like that. No cancer in me or my family."
+        },
+        {
+          "speaker": "physio",
+          "text": "You've had a hard week. Is anything worrying you about all this?",
+          "note": "Practical barriers are what stop people going to hospital."
+        },
+        {
+          "speaker": "patient",
+          "text": "My husband is in Abuja this week, and my children come home from school at four. If I go to hospital, who will pick them? And our exams start on Monday."
+        },
+        {
+          "speaker": "physio",
+          "text": "Those are real problems, and we'll sort them out together. First I'd like to check the feeling and strength in your legs, and the feeling in the area you mentioned, with a chaperone. Is that alright?",
+          "note": "Acknowledges, then explains the examination and asks consent (with a chaperone)."
+        }
+      ]
+    },
+    "maxTurns": 24,
+    "explainTurns": 8
+  }
 }

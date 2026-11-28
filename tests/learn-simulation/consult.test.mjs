@@ -22,6 +22,7 @@ import {
   scoreProgramme,
   stageAfterExplain,
   startState,
+  validateCase,
   WALKOUT_RAPPORT,
 } from '../../lib/learn/simulation/engine.ts'
 
@@ -234,4 +235,31 @@ test('a consult with no programme can’t pass, and the programme shows on the r
   const good = strongRun()
   assert.equal(consultScores(ankle, good.state, good.consult).programme, 100)
   assert.equal(consultSkills(ankle, good.state, good.consult).exercise, 100)
+})
+
+const ces = JSON.parse(readFileSync(join(import.meta.dirname, '../../content/sim-cases/back-pain-saddle-numbness.json'), 'utf8'))
+const cardiac = JSON.parse(readFileSync(join(import.meta.dirname, '../../content/sim-cases/shoulder-pain-cardiac.json'), 'utf8'))
+
+test('Mrs Adebayo hides her red flag from a rude student, and tells a kind one', () => {
+  let state = startState(ces, 0)
+  let consult = consultStart(ces)
+  // Kind and plain: she tells you about the numbness
+  const kind = applyConsultTurn(ces, state, consult, turn(['q-saddle'], { empathy: true }), 0)
+  assert.deepEqual(kind.applied, ['q-saddle'])
+  // Rude first: trust drops below 50 and she says "No... I don't think so."
+  const rude = applyConsultTurn(ces, state, consult, turn([], { rude: true }), 0)
+  const after = applyConsultTurn(ces, rude.state, rude.consult, turn(['q-saddle']), 0)
+  assert.deepEqual(after.locked, ['q-saddle'])
+  assert.ok(!after.state.findings.includes('f-saddle'))
+})
+
+test('the cardiac case explains to her daughter; the lint checks who that is', () => {
+  assert.equal(cardiac.consult.explain.speaker, 'daughter')
+  assert.deepEqual(validateCase(cardiac), [])
+  const broken = JSON.parse(JSON.stringify(cardiac))
+  broken.consult.explain.speaker = 'neighbour'
+  assert.ok(validateCase(broken).some((p) => p.includes('explain speaker')))
+  delete broken.consult.explain.who
+  broken.consult.explain.speaker = 'daughter'
+  assert.ok(validateCase(broken).some((p) => p.includes('"who"')))
 })
