@@ -58,7 +58,7 @@ function personaBlock(p: PatientProfile, spec: ConsultSpec, mood: ConsultMood, r
 const SIGNAL_GUIDE = [
   "RATE THE PHYSIO'S LATEST MESSAGE (true or false for each; be strict and honest):",
   "open: an open question that invites you to tell your story in your own words",
-  "empathy: acknowledges your feelings, pain or worries",
+  'empathy: acknowledges your feelings, pain, situation or worries (e.g. "that sounds painful", "you\'ve had a hard week", "that must be frightening", "thank you for telling me")',
   "plain: explains something to you (what's wrong, a test, the plan) in everyday words; a question on its own never counts",
   "checks: summarises back what you told them, or asks whether you understood; a new question on its own never counts",
   'jargon: uses medical words someone without medical training wouldn\'t know, without explaining them (list them in "jargon")',
